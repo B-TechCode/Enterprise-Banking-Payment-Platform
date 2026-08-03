@@ -1,0 +1,144 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: API-Gateway
+  cloud:
+    gateway:
+      # default-filters:
+      #   - name: RequestRateLimiter
+      #     args:
+      #       redis-rate-limiter.replenishRate: 10
+      #       redis-rate-limiter.burstCapacity: 20
+      #       redis-rate-limiter.requestedTokens: 1
+      routes:
+        - id: auth-service
+          uri: ${GATEWAY_AUTH_URL:http://localhost:8081}
+          predicates:
+            - Path=/auth/**
+          filters:
+            - RewritePath=/auth/(?<segment>.*), /api/v1/${segment}
+        - id: customer-service
+          uri: ${GATEWAY_CUSTOMER_URL:http://localhost:8082}
+          predicates:
+            - Path=/customers/**
+          filters:
+            - RewritePath=/customers/(?<segment>.*), /api/v1/${segment}
+        - id: account-service
+          uri: ${GATEWAY_ACCOUNT_URL:http://localhost:8083}
+          predicates:
+            - Path=/accounts/**
+          filters:
+            - RewritePath=/accounts/(?<segment>.*), /api/v1/${segment}
+        - id: biller-service
+          uri: ${GATEWAY_BILLER_URL:http://localhost:8084}
+          predicates:
+            - Path=/billers/**
+          filters:
+            - RewritePath=/billers/(?<segment>.*), /api/v1/${segment}
+        - id: payment-orchestrator
+          uri: ${GATEWAY_PAYMENT_URL:http://localhost:8085}
+          predicates:
+            - Path=/payments/**
+          filters:
+            - RewritePath=/payments/(?<segment>.*), /api/v1/${segment}
+        - id: billpay-worker-service
+          uri: ${GATEWAY_WORKER_URL:http://localhost:8086}
+          predicates:
+            - Path=/workers/**
+          filters:
+            - RewritePath=/workers/(?<segment>.*), /api/mock/central1/${segment}
+        - id: settlement-service
+          uri: ${GATEWAY_SETTLEMENT_URL:http://localhost:8087}
+          predicates:
+            - Path=/settlements/**
+          filters:
+            - RewritePath=/settlements/(?<segment>.*), /api/v1/${segment}
+        - id: auth-openapi
+          uri: ${GATEWAY_AUTH_URL:http://localhost:8081}
+          predicates:
+            - Path=/v3/api-docs/auth
+          filters:
+            - RewritePath=/v3/api-docs/auth, /v3/api-docs
+        - id: customer-openapi
+          uri: ${GATEWAY_CUSTOMER_URL:http://localhost:8082}
+          predicates:
+            - Path=/v3/api-docs/customers
+          filters:
+            - RewritePath=/v3/api-docs/customers, /v3/api-docs
+        - id: account-openapi
+          uri: ${GATEWAY_ACCOUNT_URL:http://localhost:8083}
+          predicates:
+            - Path=/v3/api-docs/accounts
+          filters:
+            - RewritePath=/v3/api-docs/accounts, /v3/api-docs
+        - id: biller-openapi
+          uri: ${GATEWAY_BILLER_URL:http://localhost:8084}
+          predicates:
+            - Path=/v3/api-docs/billers
+          filters:
+            - RewritePath=/v3/api-docs/billers, /v3/api-docs
+        - id: payment-openapi
+          uri: ${GATEWAY_PAYMENT_URL:http://localhost:8085}
+          predicates:
+            - Path=/v3/api-docs/payments
+          filters:
+            - RewritePath=/v3/api-docs/payments, /v3/api-docs
+        - id: worker-openapi
+          uri: ${GATEWAY_WORKER_URL:http://localhost:8086}
+          predicates:
+            - Path=/v3/api-docs/workers
+          filters:
+            - RewritePath=/v3/api-docs/workers, /v3/api-docs
+        - id: settlement-openapi
+          uri: ${GATEWAY_SETTLEMENT_URL:http://localhost:8087}
+          predicates:
+            - Path=/v3/api-docs/settlements
+          filters:
+            - RewritePath=/v3/api-docs/settlements, /v3/api-docs
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    urls:
+      - name: Auth Service
+        url: /v3/api-docs/auth
+      - name: Customer Service
+        url: /v3/api-docs/customers
+      - name: Account Service
+        url: /v3/api-docs/accounts
+      - name: Biller Service
+        url: /v3/api-docs/billers
+      - name: Payment Orchestrator
+        url: /v3/api-docs/payments
+      - name: Bill Pay Worker Service
+        url: /v3/api-docs/workers
+      - name: Settlement Service
+        url: /v3/api-docs/settlements
+
+logging:
+  level:
+    org.springframework.cloud.gateway: INFO
+    org.springframework.http.server.reactive: INFO
+    com.digitalbank.apigateway: INFO
+
+gateway:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:banking-gateway-secret}
