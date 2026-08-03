@@ -19,8 +19,7 @@
     <version>0.0.1-SNAPSHOT</version>
 
     <name>AuthUser</name>
-    <description>Authentication & User Management Service</description>
-
+<description>Authentication &amp; User Management Service</description>
     <dependencies>
 
         <!-- Spring Boot -->
@@ -46,7 +45,7 @@
             <artifactId>java-jwt</artifactId>
         </dependency>
 
-        <!-- Auth0 SDK -->
+        <!-- Auth0 Management SDK -->
         <dependency>
             <groupId>com.auth0</groupId>
             <artifactId>auth0</artifactId>
@@ -86,23 +85,20 @@
             <version>2.1.1</version>
         </dependency>
 
-        <!-- Commons Modules -->
+        <!-- Shared Commons Libraries -->
         <dependency>
             <groupId>com.commons</groupId>
             <artifactId>commons-security</artifactId>
-            <version>1.0.0</version>
         </dependency>
 
         <dependency>
             <groupId>com.commons</groupId>
             <artifactId>commons-dto</artifactId>
-            <version>1.0.0</version>
         </dependency>
 
         <dependency>
             <groupId>com.commons</groupId>
             <artifactId>commons-observability</artifactId>
-            <version>1.0.0</version>
         </dependency>
 
         <!-- Lombok -->
@@ -112,7 +108,7 @@
             <optional>true</optional>
         </dependency>
 
-        <!-- Tests -->
+        <!-- Testing -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
@@ -128,12 +124,15 @@
     </dependencies>
 
     <build>
+
         <plugins>
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
+
                 <configuration>
+
                     <release>${java.version}</release>
 
                     <annotationProcessorPaths>
@@ -147,6 +146,7 @@
                     </annotationProcessorPaths>
 
                 </configuration>
+
             </plugin>
 
             <plugin>
@@ -169,7 +169,7 @@
             </plugin>
 
         </plugins>
+
     </build>
 
 </project>
-
