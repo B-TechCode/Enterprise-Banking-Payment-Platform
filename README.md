@@ -1,4 +1,4 @@
-# Spring Boot Banking & Payment Microservices
+Enterprise Banking & Payment Platform
 
 A production-style banking and bill payment platform built using Spring Boot, Kafka, PostgreSQL, Auth0, and Event-Driven Microservices Architecture.
 
