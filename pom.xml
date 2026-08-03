@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
+
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="https://maven.apache.org/POM/4.0.0
-                             https://maven.apache.org/xsd/maven-4.0.0.xsd">
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
 
     <modelVersion>4.0.0</modelVersion>
 
@@ -13,7 +14,10 @@
     <packaging>pom</packaging>
 
     <name>Digital Banking Platform</name>
-    <description>Enterprise Digital Banking Microservices Platform</description>
+
+    <description>
+        Enterprise Digital Banking Platform based on Spring Boot Microservices
+    </description>
 
     <!-- ===================================================== -->
     <!-- Global Properties -->
@@ -23,9 +27,7 @@
 
         <java.version>21</java.version>
 
-        <project.build.sourceEncoding>
-            UTF-8
-        </project.build.sourceEncoding>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <spring.boot.version>3.3.1</spring.boot.version>
 
@@ -41,6 +43,14 @@
 
         <springdoc.version>2.6.0</springdoc.version>
 
+        <!-- Shared Libraries -->
+
+        <commons.dto.version>1.0.0</commons.dto.version>
+
+        <commons.security.version>1.0.0</commons.security.version>
+
+        <commons.observability.version>1.0.0</commons.observability.version>
+
     </properties>
 
     <!-- ===================================================== -->
@@ -49,27 +59,27 @@
 
     <modules>
 
-        <module>API-Gateway</module>
+        <module>backend/API-Gateway</module>
 
-        <module>AuthUser-develop</module>
+        <module>backend/AuthUser-develop</module>
 
-        <module>CustomerService-develop</module>
+        <module>backend/CustomerService-develop</module>
 
-        <module>AccountService-develop</module>
+        <module>backend/AccountService-develop</module>
 
-        <module>BillerService-develop</module>
+        <module>backend/BillerService-develop</module>
 
-        <module>PaymentOrchestrator-develop</module>
+        <module>backend/PaymentOrchestrator-develop</module>
 
-        <module>BillPayWorkerService-develop</module>
+        <module>backend/BillPayWorkerService-develop</module>
 
-        <module>SettlementService-develop</module>
+        <module>backend/SettlementService-develop</module>
 
-        <module>commons-dto-develop</module>
+        <module>backend/commons-dto-develop</module>
 
-        <module>commons-security-develop</module>
+        <module>backend/commons-security-develop</module>
 
-        <module>commons-observability-develop</module>
+        <module>backend/commons-observability-develop</module>
 
     </modules>
 
@@ -81,7 +91,7 @@
 
         <dependencies>
 
-            <!-- Spring Boot BOM -->
+            <!-- Spring Boot -->
 
             <dependency>
 
@@ -97,7 +107,7 @@
 
             </dependency>
 
-            <!-- Spring Cloud BOM -->
+            <!-- Spring Cloud -->
 
             <dependency>
 
@@ -110,6 +120,38 @@
                 <type>pom</type>
 
                 <scope>import</scope>
+
+            </dependency>
+
+            <!-- Shared Libraries -->
+
+            <dependency>
+
+                <groupId>com.commons</groupId>
+
+                <artifactId>commons-dto</artifactId>
+
+                <version>${commons.dto.version}</version>
+
+            </dependency>
+
+            <dependency>
+
+                <groupId>com.commons</groupId>
+
+                <artifactId>commons-security</artifactId>
+
+                <version>${commons.security.version}</version>
+
+            </dependency>
+
+            <dependency>
+
+                <groupId>com.commons</groupId>
+
+                <artifactId>commons-observability</artifactId>
+
+                <version>${commons.observability.version}</version>
 
             </dependency>
 
@@ -132,18 +174,6 @@
                 <artifactId>mapstruct-processor</artifactId>
 
                 <version>${mapstruct.version}</version>
-
-            </dependency>
-
-            <!-- Lombok -->
-
-            <dependency>
-
-                <groupId>org.projectlombok</groupId>
-
-                <artifactId>lombok</artifactId>
-
-                <version>${lombok.version}</version>
 
             </dependency>
 
@@ -188,7 +218,7 @@
     </dependencyManagement>
 
     <!-- ===================================================== -->
-    <!-- Build -->
+    <!-- Plugin Management -->
     <!-- ===================================================== -->
 
     <build>
