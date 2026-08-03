@@ -59,6 +59,8 @@
 
     <modules>
 
+        <module>backend/Config-Server</module>
+
         <module>backend/API-Gateway</module>
 
         <module>backend/AuthUser-develop</module>
