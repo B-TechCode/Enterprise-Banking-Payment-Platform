@@ -1,4 +1,6 @@
 spring:
-  profiles:
-    active: ${SPRING_PROFILES_ACTIVE:dev}  # default to dev
+  application:
+    name: customer-service
+  config:
+    import: optional:configserver:http://localhost:8888
 

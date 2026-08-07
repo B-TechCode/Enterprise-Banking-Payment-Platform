@@ -1,0 +1,58 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: customer-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/customerdb
+    username: postgres
+    password: Shreya2
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: customer-service-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+security:
+  oauth2:
+    resourceserver:
+      jwt:
+        issuer-uri: https://dev-wgk04dj5v68sbhre.us.auth0.com/
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      authServiceClient:
+        register-health-indicator: true
+        sliding-window-size: 5
+        minimum-number-of-calls: 3
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 5s
+
+auth:
+  service:
+    url: http://localhost:8094/
+
+auth0:
+  audience: https://mockbank/api
+
+logging:
+  level:
+    org.springframework.security.oauth2: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.kafka: INFO

@@ -1,0 +1,41 @@
+server:
+  port: 8094
+
+spring:
+  application:
+    name: auth-user
+  datasource:
+    url: jdbc:postgresql://localhost:5432/authdb
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://dev-wgk04dj5v68sbhre.us.auth0.com/
+
+consent:
+  service:
+    url: http://localhost:8096/api/v1
+
+auth0:
+  domain: https://dev-wgk04dj5v68sbhre.us.auth0.com
+  audience: https://mockbank/api
+  mgmt:
+    client-id: 7m9h4UQsjOeVom5ysSt0t3TFLRgibBkT
+    client-secret: XXXXXXX
+    audience: https://dev-wgk04dj5v68sbhre.us.auth0.com/api/v2/
+
+logging:
+  level:
+    root: INFO
+    com.authuser: DEBUG
+    org.springframework.security: DEBUG

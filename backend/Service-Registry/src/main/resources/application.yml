@@ -1,22 +1,5 @@
-server:
-  port: ${SERVER_PORT:8761}
-
 spring:
   application:
     name: service-registry
-
-eureka:
-  client:
-    register-with-eureka: false
-    fetch-registry: false
-  server:
-    enable-self-preservation: false
-
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info
-  endpoint:
-    health:
-      show-details: always
+  config:
+    import: optional:configserver:http://localhost:8888
