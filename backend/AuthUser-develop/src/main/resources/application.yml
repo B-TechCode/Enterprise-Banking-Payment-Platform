@@ -1,6 +1,13 @@
 spring:
   application:
     name: auth-user
-  config:
-    import: optional:configserver:http://localhost:8888
 
+  # AuthUser has no datasource; its port, Auth0 issuer and Auth0 Management
+  # API settings all arrive from Config Server. Activate the dev profile so
+  # application-dev.yml provides a working local fallback when Config Server
+  # has not been started yet.
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  config:
+    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
