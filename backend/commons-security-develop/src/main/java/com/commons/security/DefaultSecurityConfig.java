@@ -111,6 +111,13 @@ public class DefaultSecurityConfig {
                     "/actuator/health",
                     "/actuator/info",
 
+                    /*
+                     * Metrics scraping is machine-to-machine and must not
+                     * require a user JWT. Prometheus scrapes this endpoint
+                     * directly over the internal network.
+                     */
+                    "/actuator/prometheus",
+
                     "/swagger-ui.html",
                     "/swagger-ui/**",
                     "/v3/api-docs/**",
