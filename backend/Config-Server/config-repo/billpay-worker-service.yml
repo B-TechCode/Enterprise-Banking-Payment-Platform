@@ -6,7 +6,7 @@ spring:
     name: billpay-worker-service
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/billpayworkerdb?options=-c%20TimeZone=UTC
+    url: jdbc:postgresql://localhost:5433/billpayworkerdb?options=-c%20TimeZone=UTC
     username: ${DIGITALBANK_DB_USER:postgres}
     password: ${DIGITALBANK_DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver

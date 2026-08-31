@@ -6,7 +6,7 @@ spring:
     name: settlement-service
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/settlementdb?options=-c%20TimeZone=UTC
+    url: jdbc:postgresql://localhost:5433/settlementdb?options=-c%20TimeZone=UTC
     username: postgres
     password: postgres
     driver-class-name: org.postgresql.Driver
