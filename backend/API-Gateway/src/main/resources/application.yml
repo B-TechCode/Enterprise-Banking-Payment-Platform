@@ -1,5 +1,12 @@
 spring:
   application:
     name: api-gateway
+
   config:
     import: optional:configserver:http://localhost:8888
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://dev-vkxlfm4oy207h5bq.us.auth0.com/
