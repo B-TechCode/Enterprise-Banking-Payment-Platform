@@ -31,3 +31,35 @@ out/
 # Temporary Files
 *.tmp
 *.swp
+# ---- Local scratch / debug artifacts (not part of the build) ----
+# Service startup + debug capture files
+logs/
+*-log.txt
+*-error.txt
+account-log.txt
+customer-log.txt
+customer-error.txt
+debug.txt
+full-debug.txt
+dependency.txt
+deps.txt
+error.txt
+latest.txt
+newlog.txt
+startup.txt
+swagger-error.txt
+timezone-test.txt
+security.txt
+observability.txt
+project-structure.txt
+
+# Maven effective-pom dumps
+effective-pom
+
+# JVM crash / replay dumps
+hs_err_pid*.log
+replay_pid*.log
+
+# Disabled / backup source kept locally as a safety net
+*.bak
+*.disabled
