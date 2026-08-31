@@ -225,46 +225,45 @@
     <!-- Plugin Management -->
     <!-- ===================================================== -->
 
-    <build>
+   <build>
 
-        <pluginManagement>
+    <pluginManagement>
 
-            <plugins>
+        <plugins>
 
-                <!-- Java Compiler -->
+            <!-- Java Compiler -->
 
-                <plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>${java.version}</release>
+                </configuration>
+            </plugin>
 
-                    <groupId>org.apache.maven.plugins</groupId>
+            <!-- Spring Boot -->
 
-                    <artifactId>maven-compiler-plugin</artifactId>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring.boot.version}</version>
 
-                    <version>3.13.0</version>
+                <executions>
+                    <execution>
+                        <id>repackage</id>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
 
-                    <configuration>
+            </plugin>
 
-                        <release>${java.version}</release>
+        </plugins>
 
-                    </configuration>
+    </pluginManagement>
 
-                </plugin>
-
-                <!-- Spring Boot -->
-
-                <plugin>
-
-                    <groupId>org.springframework.boot</groupId>
-
-                    <artifactId>spring-boot-maven-plugin</artifactId>
-
-                    <version>${spring.boot.version}</version>
-
-                </plugin>
-
-            </plugins>
-
-        </pluginManagement>
-
-    </build>
+</build>
 
 </project>

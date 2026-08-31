@@ -52,6 +52,24 @@
             <version>2.3.0</version>
         </dependency>
 
+        <!-- Actuator -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Eureka Client -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+
+        <!-- Config Client -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-config</artifactId>
+        </dependency>
+
         <!-- Okta Resource Server -->
         <dependency>
             <groupId>com.okta.spring</groupId>
@@ -125,51 +143,71 @@
 
     <build>
 
-        <plugins>
+    <plugins>
 
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
+        <!-- Java Compiler -->
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-compiler-plugin</artifactId>
 
-                <configuration>
+            <configuration>
 
-                    <release>${java.version}</release>
+                <release>${java.version}</release>
 
-                    <annotationProcessorPaths>
+                <annotationProcessorPaths>
 
-                        <path>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                            <version>${lombok.version}</version>
-                        </path>
+                    <path>
+                        <groupId>org.projectlombok</groupId>
+                        <artifactId>lombok</artifactId>
+                        <version>${lombok.version}</version>
+                    </path>
 
-                    </annotationProcessorPaths>
+                </annotationProcessorPaths>
 
-                </configuration>
+            </configuration>
 
-            </plugin>
+        </plugin>
 
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
+        <!-- Spring Boot -->
+        <plugin>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-maven-plugin</artifactId>
 
-                <configuration>
+            <configuration>
 
-                    <excludes>
+                <excludes>
 
-                        <exclude>
-                            <groupId>org.projectlombok</groupId>
-                            <artifactId>lombok</artifactId>
-                        </exclude>
+                    <exclude>
+                        <groupId>org.projectlombok</groupId>
+                        <artifactId>lombok</artifactId>
+                    </exclude>
 
-                    </excludes>
+                </excludes>
 
-                </configuration>
+            </configuration>
 
-            </plugin>
+            <!-- IMPORTANT:
+                 Create executable Spring Boot JAR -->
+            <executions>
 
-        </plugins>
+                <execution>
 
-    </build>
+                    <id>repackage</id>
+
+                    <phase>package</phase>
+
+                    <goals>
+                        <goal>repackage</goal>
+                    </goals>
+
+                </execution>
+
+            </executions>
+
+        </plugin>
+
+    </plugins>
+
+</build>
 
 </project>

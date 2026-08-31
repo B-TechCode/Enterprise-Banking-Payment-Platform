@@ -45,6 +45,24 @@
             <artifactId>spring-kafka</artifactId>
         </dependency>
 
+        <!-- Actuator -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Eureka Client -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+
+        <!-- Config Client -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-config</artifactId>
+        </dependency>
+
         <!-- PostgreSQL -->
         <dependency>
             <groupId>org.postgresql</groupId>
@@ -101,6 +119,7 @@
 
         <plugins>
 
+            <!-- Java Compiler -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -111,6 +130,7 @@
 
                     <annotationProcessorPaths>
 
+                        <!-- Lombok -->
                         <path>
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
@@ -123,12 +143,14 @@
 
             </plugin>
 
+            <!-- Spring Boot -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
 
                 <configuration>
 
+                    <!-- Lombok should not be packaged -->
                     <excludes>
 
                         <exclude>
@@ -139,6 +161,24 @@
                     </excludes>
 
                 </configuration>
+
+                <!-- IMPORTANT:
+                     Creates an executable Spring Boot JAR -->
+                <executions>
+
+                    <execution>
+
+                        <id>repackage</id>
+
+                        <phase>package</phase>
+
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+
+                    </execution>
+
+                </executions>
 
             </plugin>
 
