@@ -4,36 +4,52 @@ server:
 spring:
   application:
     name: payment-orchestrator
+
   datasource:
-    url: jdbc:postgresql://localhost:5432/paymentdb
+    url: jdbc:postgresql://localhost:5432/digitalbank
     username: postgres
     password: postgres
     driver-class-name: org.postgresql.Driver
+
   jpa:
     hibernate:
       ddl-auto: update
     show-sql: true
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
     consumer:
       group-id: ${PAYMENT_ORCH_CONSUMER_GROUP:payment-orch-consumers-v1}
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
     listener:
       type: single
+
   security:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: https://dev-wgk04dj5v68sbhre.us.auth0.com/
+          issuer-uri: https://dev-vkxlfm4oy207h5bq.us.auth0.com/
 
+      client:
+        registration:
+          account-m2m:
+            provider: auth0
+            authorization-grant-type: client_credentials
+            client-id: ${AUTH0_ACCOUNT_M2M_CLIENT_ID:your-client-id}
+            client-secret: ${AUTH0_ACCOUNT_M2M_CLIENT_SECRET:your-client-secret}
+
+        provider:
+          auth0:
+            token-uri: https://dev-vkxlfm4oy207h5bq.us.auth0.com/oauth/token
 payments:
   topics:
     billpay-requested: billpay.requested
