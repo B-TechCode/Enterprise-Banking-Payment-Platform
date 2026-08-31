@@ -8,7 +8,7 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: https://dev-wgk04dj5v68sbhre.us.auth0.com/
+          issuer-uri: https://dev-vkxlfm4oy207h5bq.us.auth0.com/
 
 auth0:
   audience: https://mockbank/api
