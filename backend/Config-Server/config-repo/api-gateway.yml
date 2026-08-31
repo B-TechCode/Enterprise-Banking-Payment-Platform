@@ -5,8 +5,11 @@ spring:
   application:
     name: api-gateway
 
-  config:
-    import: optional:configserver:http://localhost:8888
+  # NOTE: spring.config.import must NOT appear in a file served BY Config
+  # Server. The native loader builds a child Environment from these files and
+  # processes the import, causing Config Server to call itself recursively
+  # until its Tomcat thread pool is exhausted. The import belongs only in the
+  # client's own src/main/resources/application.yml.
 
   security:
     oauth2:
