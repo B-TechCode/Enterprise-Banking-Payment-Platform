@@ -249,6 +249,15 @@
                 <version>3.13.0</version>
                 <configuration>
                     <release>${java.version}</release>
+                    <!--
+                        Retain method parameter names in the bytecode.
+                        spring-boot-starter-parent enables this by default; this
+                        project uses its own parent, so it must be set explicitly.
+                        Without it Spring cannot infer the name for @PathVariable,
+                        @RequestParam or @RequestHeader arguments that do not
+                        declare one, and those endpoints fail at request time.
+                    -->
+                    <parameters>true</parameters>
                 </configuration>
             </plugin>
 
