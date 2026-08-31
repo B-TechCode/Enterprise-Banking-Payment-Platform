@@ -1,45 +1,73 @@
 package com.commons.security;
 
+import java.util.Collection;
+import java.util.List;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.oauth2.core.*;
-import org.springframework.security.oauth2.jwt.*;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2Error;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtDecoders;
+import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
 
-import java.util.List;
-
 /**
- * Default security configuration that turns this Spring Boot microservice
- * into an OAuth2 Resource Server.
+ * Default security configuration for the microservices.
  *
- * <p>This class ensures that every incoming request with a Bearer token is:</p>
+ * <p>
+ * This configuration turns the service into an OAuth2 Resource Server.
+ * Every protected request must contain a valid Auth0 JWT access token.
+ * </p>
+ *
+ * <p>
+ * The JWT is validated for:
+ * </p>
+ *
  * <ul>
- *   <li>Verified against Auth0's JWKS public keys (RS256 signature verification)</li>
- *   <li>Checked for correct issuer (iss claim matches your Auth0 tenant)</li>
- *   <li>Checked for correct audience (aud claim contains your API identifier)</li>
- *   <li>Converted into Spring Security authorities (so @PreAuthorize annotations work)</li>
+ *     <li>RS256 signature</li>
+ *     <li>Issuer (iss)</li>
+ *     <li>Audience (aud)</li>
  * </ul>
  *
- * <p>By doing this inside each microservice, we follow a <b>zero-trust</b> model —
- * every service independently validates tokens and does not rely on a gateway to do it.</p>
+ * <p>
+ * The validated JWT is then converted into Spring Security authorities
+ * using {@link JwtToAuthConverter}.
+ * </p>
  */
 @Configuration
-@EnableMethodSecurity // Enables method-level security (e.g., @PreAuthorize) in controllers and services
+@EnableMethodSecurity
 public class DefaultSecurityConfig {
 
-    // Auth0 tenant issuer URI (e.g., https://your-tenant.us.auth0.com/)
+    /**
+     * Auth0 issuer URL.
+     *
+     * Example:
+     * https://your-tenant.us.auth0.com/
+     */
     @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}")
     private String issuer;
 
-    // The audience (API identifier) configured in Auth0 (e.g., https://mockbank/api)
+    /**
+     * Auth0 API audience.
+     *
+     * Example:
+     * https://mockbank/api
+     */
     @Value("${auth0.audience}")
     private String audience;
 
-    // Custom converter that maps JWT claims (permissions/scope) to Spring authorities
+    /**
+     * Converts validated JWT claims into Spring Security authorities.
+     */
     private final JwtToAuthConverter jwtToAuthConverter;
 
     public DefaultSecurityConfig(JwtToAuthConverter jwtToAuthConverter) {
@@ -47,84 +75,210 @@ public class DefaultSecurityConfig {
     }
 
     /**
-     * Defines the Spring Security filter chain.
-     * This method configures the core security behavior for the microservice:
-     * - Disable CSRF (not needed for stateless REST APIs)
-     * - Make the service stateless (no HTTP sessions)
-     * - Define which endpoints are public vs. protected
-     * - Enable OAuth2 Resource Server mode to validate JWT access tokens
+     * Configure HTTP security.
+     *
+     * <p>
+     * The application is stateless because authentication is performed
+     * using JWT access tokens rather than HTTP sessions.
+     * </p>
      */
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+
         http
-            // Disable CSRF since we're using stateless JWTs and not browser sessions
-            .csrf(cs -> cs.disable())
 
-            // Ensure the service is stateless — no JSESSIONID cookies or server-side sessions
-            .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            /*
+             * CSRF protection is not required for this stateless REST API.
+             */
+            .csrf(csrf -> csrf.disable())
 
-            // Authorization rules for HTTP requests
-            .authorizeHttpRequests(auth -> auth
-                // Public endpoints — no JWT required
-                .requestMatchers(
-                    "/actuator/health",       // Health check for monitoring
-                    "/api/v1/health",         // API-specific health endpoint
-                    "/api/v1/customer/register", // Public endpoint to register new customers
-                    "/.well-known/jwks.json", // JWKS public key endpoint (used by Auth0)
-                    "/api/v1/test/public",
-                    "/api/v1/customers"
-                ).permitAll()
-
-                // Everything else requires a valid JWT access token
-                .anyRequest().authenticated()
+            /*
+             * Do not create HTTP sessions.
+             */
+            .sessionManagement(session ->
+                session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             )
 
-            // Enable OAuth2 Resource Server mode with JWT validation
-            .oauth2ResourceServer(oauth -> oauth
-                .jwt(jwt -> jwt
-                    // Configure how tokens are decoded and verified
-                    .decoder(jwtDecoder())
+            /*
+             * Configure public and protected endpoints.
+             */
+            .authorizeHttpRequests(auth -> auth
 
-                    // Convert JWT claims (permissions, scopes) into Spring authorities
-                    .jwtAuthenticationConverter(jwtToAuthConverter)
+                /*
+                 * Public endpoints.
+                 */
+                .requestMatchers(
+                    "/actuator/health",
+                    "/actuator/info",
+
+                    "/swagger-ui.html",
+                    "/swagger-ui/**",
+                    "/v3/api-docs/**",
+
+                    "/api/v1/health",
+                    "/api/v1/customer/register",
+                    "/.well-known/jwks.json",
+                    "/api/v1/test/public",
+                    "/api/v1/customers",
+                    "/api/v1/customers/health"
                 )
+                .permitAll()
+
+                /*
+                 * Every other endpoint requires a valid JWT.
+                 */
+                .anyRequest()
+                .authenticated()
+            )
+
+            /*
+             * Enable OAuth2 Resource Server JWT authentication.
+             */
+            .oauth2ResourceServer(oauth2 ->
+                oauth2
+                    .jwt(jwt ->
+                        jwt
+                            /*
+                             * Use our custom JWT decoder.
+                             */
+                            .decoder(jwtDecoder())
+
+                            /*
+                             * Convert scopes/permissions into
+                             * Spring Security authorities.
+                             */
+                            .jwtAuthenticationConverter(jwtToAuthConverter)
+                    )
             );
 
         return http.build();
     }
 
     /**
-     * Configures a {@link JwtDecoder} that:
-     * - Downloads the JWKS (public keys) from Auth0
-     * - Verifies the RS256 signature of incoming tokens
-     * - Validates that the token's issuer (`iss`) matches your Auth0 tenant
-     * - Validates that the token's audience (`aud`) includes your API identifier
+     * Creates the JWT decoder.
      *
-     * @return a configured {@link JwtDecoder}
+     * <p>
+     * Auth0's OpenID configuration is discovered from the issuer URL.
+     * The decoder then downloads Auth0's JWKS public keys and verifies
+     * the JWT signature.
+     * </p>
+     *
+     * <p>
+     * In addition to signature validation, we explicitly validate:
+     * </p>
+     *
+     * <ul>
+     *     <li>issuer</li>
+     *     <li>audience</li>
+     * </ul>
      */
     @Bean
     public JwtDecoder jwtDecoder() {
-        // Build a NimbusJwtDecoder using the issuer URL (it will auto-discover JWKS keys)
-        NimbusJwtDecoder dec = (NimbusJwtDecoder) JwtDecoders.fromIssuerLocation(issuer);
 
-        // Validator 1: Ensure the issuer (iss) claim matches our tenant
-        OAuth2TokenValidator<Jwt> withIssuer = JwtValidators.createDefaultWithIssuer(issuer);
+        /*
+         * Build Nimbus JWT decoder using Auth0 issuer metadata.
+         *
+         * This automatically discovers the JWKS endpoint.
+         */
+        NimbusJwtDecoder decoder =
+            (NimbusJwtDecoder) JwtDecoders.fromIssuerLocation(issuer);
 
-        // Validator 2: Ensure the audience (aud) claim contains our API identifier
+        /*
+         * Validator 1:
+         *
+         * Verify that:
+         *
+         * iss == configured Auth0 issuer
+         */
+        OAuth2TokenValidator<Jwt> withIssuer =
+            JwtValidators.createDefaultWithIssuer(issuer);
+
+        /*
+         * Validator 2:
+         *
+         * Verify that the JWT contains our expected API audience.
+         *
+         * IMPORTANT:
+         *
+         * Auth0 can represent the "aud" claim as either:
+         *
+         * 1. a String
+         *
+         *       "https://mockbank/api"
+         *
+         * OR
+         *
+         * 2. a Collection/List
+         *
+         *       ["https://mockbank/api"]
+         *
+         * The previous implementation only accepted List.
+         *
+         * Your current token is being decoded with:
+         *
+         *       aud = https://mockbank/api
+         *
+         * Therefore the old validator rejected an otherwise valid token
+         * and produced HTTP 401.
+         */
         OAuth2TokenValidator<Jwt> withAudience = token -> {
+
             Object aud = token.getClaims().get("aud");
-            if (aud instanceof List && ((List<?>) aud).contains(audience)) {
-                return OAuth2TokenValidatorResult.success();
+
+            /*
+             * Case 1:
+             *
+             * JWT audience is represented as a String.
+             */
+            if (aud instanceof String) {
+
+                String audienceValue = (String) aud;
+
+                if (audience.equals(audienceValue)) {
+                    return OAuth2TokenValidatorResult.success();
+                }
             }
-            // Reject tokens missing or having the wrong audience
+
+            /*
+             * Case 2:
+             *
+             * JWT audience is represented as a Collection/List.
+             */
+            if (aud instanceof Collection<?>) {
+
+                for (Object value : (Collection<?>) aud) {
+
+                    if (audience.equals(String.valueOf(value))) {
+                        return OAuth2TokenValidatorResult.success();
+                    }
+                }
+            }
+
+            /*
+             * Audience was missing or did not contain
+             * https://mockbank/api.
+             */
             return OAuth2TokenValidatorResult.failure(
-                new OAuth2Error("invalid_token", "missing/invalid audience", null)
+                new OAuth2Error(
+                    "invalid_token",
+                    "missing/invalid audience",
+                    null
+                )
             );
         };
 
-        // Combine both validators (issuer AND audience must pass)
-        dec.setJwtValidator(new DelegatingOAuth2TokenValidator<>(withIssuer, withAudience));
+        /*
+         * Both validators must pass:
+         *
+         * issuer AND audience
+         */
+        decoder.setJwtValidator(
+            new DelegatingOAuth2TokenValidator<>(
+                withIssuer,
+                withAudience
+            )
+        );
 
-        return dec;
+        return decoder;
     }
 }
