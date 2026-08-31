@@ -3,94 +3,123 @@ server:
 
 spring:
   application:
-    name: API-Gateway
+    name: api-gateway
+
+  config:
+    import: optional:configserver:http://localhost:8888
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://dev-vkxlfm4oy207h5bq.us.auth0.com/
+
   cloud:
     gateway:
       routes:
+
         - id: auth-service
-          uri: ${GATEWAY_AUTH_URL:http://localhost:8081}
+          uri: lb://auth-user
           predicates:
             - Path=/auth/**
           filters:
             - RewritePath=/auth/(?<segment>.*), /api/v1/${segment}
+
         - id: customer-service
-          uri: ${GATEWAY_CUSTOMER_URL:http://localhost:8082}
+          uri: lb://customer-service
           predicates:
             - Path=/customers/**
           filters:
             - RewritePath=/customers/(?<segment>.*), /api/v1/${segment}
+
         - id: account-service
-          uri: ${GATEWAY_ACCOUNT_URL:http://localhost:8083}
+          uri: lb://account-service
           predicates:
             - Path=/accounts/**
           filters:
             - RewritePath=/accounts/(?<segment>.*), /api/v1/${segment}
+
         - id: biller-service
-          uri: ${GATEWAY_BILLER_URL:http://localhost:8084}
+          uri: lb://biller-service
           predicates:
             - Path=/billers/**
           filters:
             - RewritePath=/billers/(?<segment>.*), /api/v1/${segment}
+
         - id: payment-orchestrator
-          uri: ${GATEWAY_PAYMENT_URL:http://localhost:8085}
+          uri: lb://payment-orchestrator
           predicates:
             - Path=/payments/**
           filters:
             - RewritePath=/payments/(?<segment>.*), /api/v1/${segment}
+
         - id: billpay-worker-service
-          uri: ${GATEWAY_WORKER_URL:http://localhost:8086}
+          uri: lb://billpay-worker-service
           predicates:
             - Path=/workers/**
           filters:
             - RewritePath=/workers/(?<segment>.*), /api/mock/central1/${segment}
+
         - id: settlement-service
-          uri: ${GATEWAY_SETTLEMENT_URL:http://localhost:8087}
+          uri: lb://settlement-service
           predicates:
             - Path=/settlements/**
           filters:
             - RewritePath=/settlements/(?<segment>.*), /api/v1/${segment}
+
+        # =========================
+        # OpenAPI routes
+        # =========================
+
         - id: auth-openapi
-          uri: ${GATEWAY_AUTH_URL:http://localhost:8081}
+          uri: lb://auth-user
           predicates:
             - Path=/v3/api-docs/auth
           filters:
             - RewritePath=/v3/api-docs/auth, /v3/api-docs
+
         - id: customer-openapi
-          uri: ${GATEWAY_CUSTOMER_URL:http://localhost:8082}
+          uri: lb://customer-service
           predicates:
             - Path=/v3/api-docs/customers
           filters:
             - RewritePath=/v3/api-docs/customers, /v3/api-docs
+
         - id: account-openapi
-          uri: ${GATEWAY_ACCOUNT_URL:http://localhost:8083}
+          uri: lb://account-service
           predicates:
             - Path=/v3/api-docs/accounts
           filters:
             - RewritePath=/v3/api-docs/accounts, /v3/api-docs
+
         - id: biller-openapi
-          uri: ${GATEWAY_BILLER_URL:http://localhost:8084}
+          uri: lb://biller-service
           predicates:
             - Path=/v3/api-docs/billers
           filters:
             - RewritePath=/v3/api-docs/billers, /v3/api-docs
+
         - id: payment-openapi
-          uri: ${GATEWAY_PAYMENT_URL:http://localhost:8085}
+          uri: lb://payment-orchestrator
           predicates:
             - Path=/v3/api-docs/payments
           filters:
             - RewritePath=/v3/api-docs/payments, /v3/api-docs
+
         - id: worker-openapi
-          uri: ${GATEWAY_WORKER_URL:http://localhost:8086}
+          uri: lb://billpay-worker-service
           predicates:
             - Path=/v3/api-docs/workers
           filters:
             - RewritePath=/v3/api-docs/workers, /v3/api-docs
+
         - id: settlement-openapi
-          uri: ${GATEWAY_SETTLEMENT_URL:http://localhost:8087}
+          uri: lb://settlement-service
           predicates:
             - Path=/v3/api-docs/settlements
           filters:
             - RewritePath=/v3/api-docs/settlements, /v3/api-docs
+
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -104,16 +133,22 @@ springdoc:
     urls:
       - name: Auth Service
         url: /v3/api-docs/auth
+
       - name: Customer Service
         url: /v3/api-docs/customers
+
       - name: Account Service
         url: /v3/api-docs/accounts
+
       - name: Biller Service
         url: /v3/api-docs/billers
+
       - name: Payment Orchestrator
         url: /v3/api-docs/payments
+
       - name: Bill Pay Worker Service
         url: /v3/api-docs/workers
+
       - name: Settlement Service
         url: /v3/api-docs/settlements
 
