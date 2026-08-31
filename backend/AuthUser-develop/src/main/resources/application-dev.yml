@@ -26,9 +26,21 @@ consent:
     
     
 auth0:
-  domain: https://dev-wgk04dj5v68sbhre.us.auth0.com
-  audience: https://mockbank/api
+  # Tenant and Management API credentials are supplied by the environment so no
+  # tenant identity or credential is stored in version control.
+  #
+  # Required only for the Auth0 Management API calls made by
+  # ManagementTokenService / Auth0UserService (POST /api/v1/iam/users).
+  # Defaults are intentionally empty: the service starts without them, and the
+  # Management API call fails at invocation time rather than blocking startup.
+  #
+  #   AUTH0_DOMAIN            e.g. https://<tenant>.us.auth0.com
+  #   AUTH0_MGMT_CLIENT_ID    Management API M2M application client id
+  #   AUTH0_MGMT_CLIENT_SECRET  Management API M2M application client secret
+  #   AUTH0_MGMT_AUDIENCE     e.g. https://<tenant>.us.auth0.com/api/v2/
+  domain: ${AUTH0_DOMAIN:}
+  audience: ${AUTH0_AUDIENCE:https://mockbank/api}
   mgmt:
-     client-id: 7m9h4UQsjOeVom5ysSt0t3TFLRgibBkT
-     client-secret: XXXXXXX
-     audience: https://dev-wgk04dj5v68sbhre.us.auth0.com/api/v2/
+    client-id: ${AUTH0_MGMT_CLIENT_ID:}
+    client-secret: ${AUTH0_MGMT_CLIENT_SECRET:}
+    audience: ${AUTH0_MGMT_AUDIENCE:}
