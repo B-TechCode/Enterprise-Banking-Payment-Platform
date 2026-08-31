@@ -49,7 +49,7 @@
 
         <commons.security.version>1.0.0</commons.security.version>
 
-        <commons.observability.version>1.0.0</commons.observability.version>
+        <commons.observability.version>1.0.3</commons.observability.version>
 
     </properties>
 
