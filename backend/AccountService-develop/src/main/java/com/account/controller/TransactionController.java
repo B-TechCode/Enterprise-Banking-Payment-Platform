@@ -28,7 +28,7 @@ public class TransactionController {
     private final TransactionMapper transactionMapper;
 
     @GetMapping("/accounts/{accountId}/transactions")
-    @PreAuthorize("hasAuthority('SCOPE_fdx:transactions.read')")
+    @PreAuthorize("hasAuthority('SCOPE_fdx:accounts.read')")
     public ResponseEntity<List<TransactionResponse>> getTransactionsByAccount(
             @PathVariable("accountId") UUID accountId,
             @RequestHeader("Authorization") String authHeader,
@@ -54,7 +54,7 @@ public class TransactionController {
 
     
     @GetMapping("/transactions/{transactionId}")
-    @PreAuthorize("hasAuthority('SCOPE_fdx:transactions.read')")
+    @PreAuthorize("hasAuthority('SCOPE_fdx:accounts.read')")
     public ResponseEntity<TransactionResponse> getTransactionById(@PathVariable UUID transactionId) {
         Transaction transaction = transactionService.findById(transactionId);
         TransactionResponse dto = transactionMapper.toResponse(transaction);
@@ -63,3 +63,4 @@ public class TransactionController {
     }
     
 }
+

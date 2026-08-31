@@ -55,18 +55,21 @@ public class AccountService {
 	}
 
 	private void ensureOwnerOrAdmin(Account a) {
-		
-		
-		if (currentUser.hasScope("admin:accounts"))
-			return;
-		
-		
-		var me = currentUser.customerId().orElseThrow(() -> new OwnerAccessDeniedException());
-		
-		if (!a.getCustomerId().equals(me)) {
-			throw new OwnerAccessDeniedException();
-		}
-	}
+
+    // Service/client-credentials tokens with account write scope are
+    // allowed to create/manage accounts when no customer_id claim exists.
+    if (currentUser.hasScope("admin:accounts")
+            || currentUser.hasScope("fdx:accounts.write")) {
+        return;
+    }
+
+    var me = currentUser.customerId()
+            .orElseThrow(OwnerAccessDeniedException::new);
+
+    if (!a.getCustomerId().equals(me)) {
+        throw new OwnerAccessDeniedException();
+    }
+}
 
 	private void emitTransaction(Account acc, String type, BigDecimal amount, String reason, boolean posting,
 			BigDecimal balanceAfterOrNull) {

@@ -40,7 +40,9 @@ public class AccountController {
     public ResponseEntity<AccountResponse> create(
             @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody AccountRequest request) {
+
         AccountResponse resp = service.create(request, idempotencyKey);
+
         return ResponseEntity.status(HttpStatus.CREATED)
                 .eTag('"' + String.valueOf(resp.version()) + '"')
                 .body(resp);
@@ -48,32 +50,42 @@ public class AccountController {
 
     @GetMapping("/accounts/{id}")
     @PreAuthorize("hasAuthority('SCOPE_fdx:accounts.read')")
-    public ResponseEntity<AccountResponse> getAccount(@PathVariable("id") UUID id) {
+    public ResponseEntity<AccountResponse> getAccount(
+            @PathVariable("id") UUID id) {
+
         AccountResponse r = service.get(id);
+
         return ResponseEntity.ok()
                 .eTag('"' + String.valueOf(r.version()) + '"')
                 .body(r);
     }
 
     @GetMapping("/accounts")
-    @PreAuthorize("hasAuthority('SCOPE_admin:accounts.read')")
+    @PreAuthorize("hasAuthority('SCOPE_fdx:accounts.read')")
     public ResponseEntity<List<AccountResponse>> listAccounts(
             @RequestParam(name = "status", required = false) AccountStatus status,
             @RequestParam(name = "currency", required = false) String currency) {
-        // Simple version: return all. (Optional: add filters in service later.)
+
+        // Simple version: return all.
+        // Optional filtering can be added in the service layer later.
         return ResponseEntity.ok(service.listAll());
     }
 
     @GetMapping("/accounts/{id}/balance")
     @PreAuthorize("hasAuthority('SCOPE_fdx:accounts.read')")
-    public ResponseEntity<AccountBalanceResponse> getBalances(@PathVariable("id") UUID id) {
+    public ResponseEntity<AccountBalanceResponse> getBalances(
+            @PathVariable("id") UUID id) {
+
         return ResponseEntity.ok(service.getBalance(id));
     }
 
     @GetMapping("/customer/{id}/accounts")
     @PreAuthorize("hasAuthority('SCOPE_fdx:accounts.read')")
-    public ResponseEntity<List<AccountResponse>> getByCustomer(@PathVariable("id") String id) {
+    public ResponseEntity<List<AccountResponse>> getByCustomer(
+            @PathVariable("id") String id) {
+
         log.info("Fetching accounts for customer: {}", id);
+
         return ResponseEntity.ok(service.findByCustomerId(id));
     }
 
@@ -82,14 +94,19 @@ public class AccountController {
     public ResponseEntity<Void> updateStatus(
             @PathVariable("id") UUID id,
             @RequestParam("status") AccountStatus status) {
+
         service.updateStatus(id, status);
+
         return ResponseEntity.ok().build();
     }
 
     @GetMapping("/accounts/{id}/owner")
     @PreAuthorize("hasAuthority('SCOPE_fdx:accounts.read')")
-    public AccountOwnerResponse getAccountOwner(@PathVariable("id") UUID id) {
+    public AccountOwnerResponse getAccountOwner(
+            @PathVariable("id") UUID id) {
+
         String customerId = service.getCustomerIdForAccount(id);
+
         return new AccountOwnerResponse(id, customerId);
     }
 
@@ -101,8 +118,15 @@ public class AccountController {
             @PathVariable("id") UUID id,
             @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody CreateHoldRequest request) {
-        HoldResponse resp = service.createHold(id, request.withIdempotencyKey(idempotencyKey));
-        return ResponseEntity.status(HttpStatus.CREATED).body(resp);
+
+        HoldResponse resp =
+                service.createHold(
+                        id,
+                        request.withIdempotencyKey(idempotencyKey)
+                );
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(resp);
     }
 
     @PostMapping("/accounts/{id}/holds/{holdId}/release")
@@ -110,7 +134,10 @@ public class AccountController {
     public ResponseEntity<HoldResponse> releaseHold(
             @PathVariable("id") UUID id,
             @PathVariable("holdId") UUID holdId) {
-        HoldResponse resp = service.releaseHold(id, holdId, "manual_release");
+
+        HoldResponse resp =
+                service.releaseHold(id, holdId, "manual_release");
+
         return ResponseEntity.ok(resp);
     }
 
@@ -122,8 +149,12 @@ public class AccountController {
             @PathVariable("id") UUID id,
             @RequestHeader(name = "If-Match", required = false) String ifMatch,
             @Valid @RequestBody PostingRequest request) {
+
         Integer expected = parseIfMatch(ifMatch);
-        AccountResponse r = service.credit(id, request, expected);
+
+        AccountResponse r =
+                service.credit(id, request, expected);
+
         return ResponseEntity.status(HttpStatus.CREATED)
                 .eTag('"' + String.valueOf(r.version()) + '"')
                 .body(r);
@@ -135,8 +166,12 @@ public class AccountController {
             @PathVariable("id") UUID id,
             @RequestHeader(name = "If-Match", required = false) String ifMatch,
             @Valid @RequestBody PostingRequest request) {
+
         Integer expected = parseIfMatch(ifMatch);
-        AccountResponse r = service.debit(id, request, expected);
+
+        AccountResponse r =
+                service.debit(id, request, expected);
+
         return ResponseEntity.status(HttpStatus.CREATED)
                 .eTag('"' + String.valueOf(r.version()) + '"')
                 .body(r);
@@ -145,8 +180,14 @@ public class AccountController {
     /* ---------------- Helpers ---------------- */
 
     private Integer parseIfMatch(String ifMatch) {
-        if (ifMatch == null || ifMatch.isBlank()) return null;
+
+        if (ifMatch == null || ifMatch.isBlank()) {
+            return null;
+        }
+
         String v = ifMatch.replace("\"", "").trim();
+
         return Integer.valueOf(v);
     }
 }
+
