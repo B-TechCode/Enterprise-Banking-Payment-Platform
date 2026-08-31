@@ -2,39 +2,34 @@ server:
   port: 8084
 
 spring:
+  application:
+    name: account-service
+
   security:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: https://dev-wgk04dj5v68sbhre.us.auth0.com/
-  application:
-    name: account-service
+          issuer-uri: https://dev-vkxlfm4oy207h5bq.us.auth0.com/
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/accountsdb
+    url: "jdbc:postgresql://127.0.0.1:5432/accountsdb?options=-c%20TimeZone=UTC"
     username: postgres
     password: postgres
     driver-class-name: org.postgresql.Driver
 
   jpa:
     hibernate:
-      ddl-auto: update  # or `validate` or `none` in prod
+      ddl-auto: update
     show-sql: true
     database-platform: org.hibernate.dialect.PostgreSQLDialect
 
-
- 
 logging:
   level:
     org.springframework.security: DEBUG
-    
+
 account:
   service:
     url: http://localhost:8084
-    
 
 auth0:
   audience: https://mockbank/api
-
-
-
