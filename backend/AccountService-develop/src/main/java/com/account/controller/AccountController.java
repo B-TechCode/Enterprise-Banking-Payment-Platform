@@ -61,7 +61,7 @@ public class AccountController {
     }
 
     @GetMapping("/accounts")
-    @PreAuthorize("hasAuthority('SCOPE_fdx:accounts.read')")
+    @PreAuthorize("hasAuthority('SCOPE_admin:accounts.read')")
     public ResponseEntity<List<AccountResponse>> listAccounts(
             @RequestParam(name = "status", required = false) AccountStatus status,
             @RequestParam(name = "currency", required = false) String currency) {
