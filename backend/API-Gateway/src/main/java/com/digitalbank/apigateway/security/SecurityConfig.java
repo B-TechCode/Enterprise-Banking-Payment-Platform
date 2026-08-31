@@ -44,10 +44,14 @@ public class SecurityConfig {
                         // Public actuator endpoints
                         .pathMatchers("/actuator/**").permitAll()
 
-                        // Public Swagger UI
+                        // Public Swagger UI.
+                        // springdoc's WebFlux UI redirects /swagger-ui.html to
+                        // /webjars/swagger-ui/index.html, so the webjars path must
+                        // be permitted too or the redirect target returns 401.
                         .pathMatchers(
                                 "/swagger-ui.html",
-                                "/swagger-ui/**"
+                                "/swagger-ui/**",
+                                "/webjars/**"
                         ).permitAll()
 
                         // Public OpenAPI documentation
