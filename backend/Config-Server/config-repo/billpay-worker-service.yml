@@ -4,6 +4,23 @@ server:
 spring:
   application:
     name: billpay-worker-service
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/billpayworkerdb?options=-c%20TimeZone=UTC
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:
