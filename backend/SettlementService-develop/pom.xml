@@ -75,11 +75,21 @@
         <dependency>
             <groupId>com.commons</groupId>
             <artifactId>commons-dto</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>com.commons</groupId>
-            <artifactId>commons-security</artifactId>
+            <!--
+                SettlementService exposes no HTTP API - it is a Kafka consumer.
+                commons-dto pulls in Spring Security for GlobalExceptionHandler,
+                which this service does not component-scan. Left on the classpath,
+                Spring Boot auto-configures its default HTTP Basic filter chain and
+                returns 401 for actuator/info and actuator/prometheus, breaking
+                metrics scraping. Exclude it rather than configure security for an
+                API surface that does not exist.
+            -->
+            <exclusions>
+                <exclusion>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-starter-security</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <dependency>
@@ -102,12 +112,6 @@
         </dependency>
 
     
-        <!-- OpenAPI / Swagger -->
-        <dependency>
-            <groupId>org.springdoc</groupId>
-            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-        </dependency>
-
     </dependencies>
 
     <build>

@@ -63,13 +63,6 @@ spring:
           filters:
             - RewritePath=/workers/(?<segment>.*), /api/mock/central1/${segment}
 
-        - id: settlement-service
-          uri: lb://settlement-service
-          predicates:
-            - Path=/settlements/**
-          filters:
-            - RewritePath=/settlements/(?<segment>.*), /api/v1/${segment}
-
         # =========================
         # OpenAPI routes
         # =========================
@@ -116,13 +109,6 @@ spring:
           filters:
             - RewritePath=/v3/api-docs/workers, /v3/api-docs
 
-        - id: settlement-openapi
-          uri: lb://settlement-service
-          predicates:
-            - Path=/v3/api-docs/settlements
-          filters:
-            - RewritePath=/v3/api-docs/settlements, /v3/api-docs
-
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -151,9 +137,6 @@ springdoc:
 
       - name: Bill Pay Worker Service
         url: /v3/api-docs/workers
-
-      - name: Settlement Service
-        url: /v3/api-docs/settlements
 
 gateway:
   security:

@@ -30,9 +30,6 @@ public class ApiGatewayConfiguration {
                 .route("worker-service", route -> route.path("/workers/**")
                         .filters(filter -> filter.rewritePath("/workers/(?<segment>.*)", "/api/mock/central1/${segment}"))
                         .uri("lb://billpay-worker-service"))
-                .route("settlement-service", route -> route.path("/settlements/**")
-                        .filters(filter -> filter.rewritePath("/settlements/(?<segment>.*)", "/api/v1/${segment}"))
-                        .uri("lb://settlement-service"))
                 .route("auth-openapi", route -> route.path("/v3/api-docs/auth")
                         .filters(filter -> filter.rewritePath("/v3/api-docs/auth", "/v3/api-docs"))
                         .uri("lb://auth-user"))
@@ -51,9 +48,6 @@ public class ApiGatewayConfiguration {
                 .route("worker-openapi", route -> route.path("/v3/api-docs/workers")
                         .filters(filter -> filter.rewritePath("/v3/api-docs/workers", "/v3/api-docs"))
                         .uri("lb://billpay-worker-service"))
-                .route("settlement-openapi", route -> route.path("/v3/api-docs/settlements")
-                        .filters(filter -> filter.rewritePath("/v3/api-docs/settlements", "/v3/api-docs"))
-                        .uri("lb://settlement-service"))
                 .build();
     }
 }
