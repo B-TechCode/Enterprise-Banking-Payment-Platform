@@ -51,6 +51,30 @@ class CurrentUserTest {
     }
 
     @Test
+    @DisplayName("customerIdClaim reads the namespaced Auth0 claim")
+    void customerIdClaimReadsNamespacedClaim() {
+        // Auth0 drops unnamespaced custom claims, so a real login token carries
+        // the identity under the namespaced name only.
+        authenticateWith(Map.of(
+                "sub", "auth0|user-1",
+                "https://mockbank/customer_id", "cust-ns-1"));
+
+        assertThat(currentUser.customerIdClaim()).contains("cust-ns-1");
+        assertThat(currentUser.customerId()).contains("cust-ns-1");
+    }
+
+    @Test
+    @DisplayName("the namespaced claim wins when both forms are present")
+    void namespacedClaimTakesPrecedence() {
+        authenticateWith(Map.of(
+                "sub", "auth0|user-1",
+                "https://mockbank/customer_id", "cust-ns-1",
+                "customer_id", "cust-bare-1"));
+
+        assertThat(currentUser.customerIdClaim()).contains("cust-ns-1");
+    }
+
+    @Test
     @DisplayName("customerIdClaim is empty for a token with no customer_id, and does not fall back to sub")
     void customerIdClaimDoesNotFallBackToSub() {
         authenticateWith(Map.of("sub", "abc123@clients", "gty", "client-credentials"));

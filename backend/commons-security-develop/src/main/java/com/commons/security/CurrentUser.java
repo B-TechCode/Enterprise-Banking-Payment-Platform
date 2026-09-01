@@ -10,6 +10,35 @@ import java.util.Optional;
 @Component
 public class CurrentUser {
 
+    /**
+     * Namespaced customer identity claim.
+     *
+     * <p>Auth0 requires custom claims to be namespaced with a URI and silently
+     * drops unnamespaced ones, so an Action that sets the customer identity
+     * during login must emit it under this name. Checked first.</p>
+     */
+    static final String NAMESPACED_CUSTOMER_ID_CLAIM = "https://mockbank/customer_id";
+
+    /**
+     * Unnamespaced fallback, retained for tokens minted outside the Auth0 login
+     * flow (tests and existing service-to-service callers).
+     */
+    static final String CUSTOMER_ID_CLAIM = "customer_id";
+
+    /**
+     * Reads the customer identity from whichever claim carries it, preferring
+     * the namespaced form that Auth0 emits.
+     */
+    private static Optional<String> readCustomerId(Jwt jwt) {
+        for (String claim : new String[] { NAMESPACED_CUSTOMER_ID_CLAIM, CUSTOMER_ID_CLAIM }) {
+            Object value = jwt.getClaims().get(claim);
+            if (value != null && !String.valueOf(value).isBlank()) {
+                return Optional.of(String.valueOf(value));
+            }
+        }
+        return Optional.empty();
+    }
+
     public Optional<String> customerId() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
 
@@ -17,10 +46,10 @@ public class CurrentUser {
             return Optional.empty();
         }
 
-        // Preferred: real customer identity claim
-        Object customerId = jwt.getClaims().get("customer_id");
-        if (customerId != null && !String.valueOf(customerId).isBlank()) {
-            return Optional.of(String.valueOf(customerId));
+        // Preferred: real customer identity claim, namespaced or bare.
+        Optional<String> customerId = readCustomerId(jwt);
+        if (customerId.isPresent()) {
+            return customerId;
         }
 
         // Auth0 client-credentials tokens do not normally contain customer_id.
@@ -47,12 +76,7 @@ public class CurrentUser {
             return Optional.empty();
         }
 
-        Object customerId = jwt.getClaims().get("customer_id");
-        if (customerId != null && !String.valueOf(customerId).isBlank()) {
-            return Optional.of(String.valueOf(customerId));
-        }
-
-        return Optional.empty();
+        return readCustomerId(jwt);
     }
 
     /**
