@@ -101,28 +101,50 @@ public class SettlementProcessor {
     
     
     
-    private void handleFailureWithRetryOrDlq(BillBatchSettlement settlement, Exception ex) {
-        UUID batchId = settlement.getBatchId();
+   private void handleFailureWithRetryOrDlq(BillBatchSettlement settlement, Exception ex) {
 
-        if (settlement.getRetryCount() < MAX_RETRIES) {
-            int nextAttempt = settlement.getRetryCount() + 1;
+    UUID batchId = settlement.getBatchId();
 
-            BillBatchRetryEvent retryEvent = new BillBatchRetryEvent(
-                    batchId,
-                    nextAttempt,
-                    "Auto-retry from SettlementService after failure: " + ex.getMessage(),
-                    OffsetDateTime.now()
-            );
+    if (settlement.getRetryCount() < MAX_RETRIES) {
 
-            log.info("Scheduling retry attempt {} for batchId={}", nextAttempt, batchId);
-            eventPublisher.publishBatchRetry(retryEvent); // topic: bill.batch.retry
+        int nextAttempt = settlement.getRetryCount() + 1;
 
-        } else {
-            log.warn("Max retries ({}) reached for batchId={}, sending to DLQ",
-                    MAX_RETRIES, batchId);
-            eventPublisher.publishDlq(batchId, ex.getMessage());
-        }
+        settlement.setRetryCount(nextAttempt);
+        settlement.setUpdatedAt(OffsetDateTime.now());
+
+        settlementRepo.save(settlement);
+
+        BillBatchRetryEvent retryEvent =
+                new BillBatchRetryEvent(
+                        batchId,
+                        nextAttempt,
+                        "Auto-retry from SettlementService after failure: "
+                                + ex.getMessage(),
+                        OffsetDateTime.now()
+                );
+
+        log.info(
+                "Scheduling retry attempt {} for batchId={}",
+                nextAttempt,
+                batchId
+        );
+
+        eventPublisher.publishBatchRetry(retryEvent);
+
+    } else {
+
+        log.warn(
+                "Max retries ({}) reached for batchId={}, sending to DLQ",
+                MAX_RETRIES,
+                batchId
+        );
+
+        eventPublisher.publishDlq(
+                batchId,
+                ex.getMessage()
+        );
     }
+}
 
     @Transactional
     public void handlePain002(Pain002Message msg) {

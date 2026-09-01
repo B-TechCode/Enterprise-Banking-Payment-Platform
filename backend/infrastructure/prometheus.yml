@@ -10,14 +10,14 @@ scrape_configs:
 
     static_configs:
       - targets:
-          - host.docker.internal:8080
-          - host.docker.internal:8081
-          - host.docker.internal:8082
-          - host.docker.internal:8083
-          - host.docker.internal:8084
-          - host.docker.internal:8085
-          - host.docker.internal:8086
-          - host.docker.internal:8087
+          - host.docker.internal:8080   # api-gateway
+          - host.docker.internal:8083   # customer-service
+          - host.docker.internal:8084   # account-service
+          - host.docker.internal:8086   # payment-orchestrator
+          - host.docker.internal:8087   # settlement-service
+          - host.docker.internal:8088   # biller-service
+          - host.docker.internal:8090   # billpay-worker-service
+          - host.docker.internal:8094   # auth-user
 
     relabel_configs:
       - source_labels: [__address__]

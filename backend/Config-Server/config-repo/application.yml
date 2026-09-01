@@ -3,16 +3,27 @@ management:
     web:
       exposure:
         include: health,info,prometheus
+
+  endpoint:
+    health:
+      show-details: always
+
+      probes:
+        enabled: true
+
   metrics:
     tags:
       application: ${spring.application.name}
+
   prometheus:
     metrics:
       export:
         enabled: true
+
   tracing:
     sampling:
       probability: 1.0
+
   zipkin:
     tracing:
       endpoint: http://localhost:9411/api/v2/spans
@@ -21,8 +32,19 @@ eureka:
   client:
     service-url:
       defaultZone: http://localhost:8761/eureka/
+
+    register-with-eureka: true
+
+    fetch-registry: true
+
   instance:
     prefer-ip-address: true
+
+    instance-id: ${spring.application.name}:${random.value}
+
+    health-check-url-path: /actuator/health
+
+    status-page-url-path: /actuator/info
 
 logging:
   level:
@@ -31,6 +53,8 @@ logging:
 spring:
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
   redis:
     host: ${REDIS_HOST:localhost}
+
     port: ${REDIS_PORT:6379}

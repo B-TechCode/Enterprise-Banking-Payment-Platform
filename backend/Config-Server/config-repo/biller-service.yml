@@ -4,23 +4,28 @@ server:
 spring:
   application:
     name: biller-service
+
   datasource:
-    url: jdbc:postgresql://localhost:5432/billerdb
-    username: postgres
-    password: postgres
+    url: jdbc:postgresql://localhost:5433/billerdb?options=-c%20TimeZone=UTC
+    username: ${DIGITALBANK_DB_USER:postgres}
+    password: ${DIGITALBANK_DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
+
   jpa:
     hibernate:
       ddl-auto: update
     show-sql: true
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
+        jdbc:
+          time_zone: UTC
+
   security:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: https://dev-wgk04dj5v68sbhre.us.auth0.com/
+          issuer-uri: https://dev-vkxlfm4oy207h5bq.us.auth0.com/
 
 auth0:
   audience: https://mockbank/api

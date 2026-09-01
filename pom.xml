@@ -49,7 +49,7 @@
 
         <commons.security.version>1.0.0</commons.security.version>
 
-        <commons.observability.version>1.0.0</commons.observability.version>
+        <commons.observability.version>1.0.3</commons.observability.version>
 
     </properties>
 
@@ -217,6 +217,16 @@
 
             </dependency>
 
+            <dependency>
+
+                <groupId>org.springdoc</groupId>
+
+                <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+
+                <version>${springdoc.version}</version>
+
+            </dependency>
+
         </dependencies>
 
     </dependencyManagement>
@@ -225,46 +235,54 @@
     <!-- Plugin Management -->
     <!-- ===================================================== -->
 
-    <build>
+   <build>
 
-        <pluginManagement>
+    <pluginManagement>
 
-            <plugins>
+        <plugins>
 
-                <!-- Java Compiler -->
+            <!-- Java Compiler -->
 
-                <plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>${java.version}</release>
+                    <!--
+                        Retain method parameter names in the bytecode.
+                        spring-boot-starter-parent enables this by default; this
+                        project uses its own parent, so it must be set explicitly.
+                        Without it Spring cannot infer the name for @PathVariable,
+                        @RequestParam or @RequestHeader arguments that do not
+                        declare one, and those endpoints fail at request time.
+                    -->
+                    <parameters>true</parameters>
+                </configuration>
+            </plugin>
 
-                    <groupId>org.apache.maven.plugins</groupId>
+            <!-- Spring Boot -->
 
-                    <artifactId>maven-compiler-plugin</artifactId>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <version>${spring.boot.version}</version>
 
-                    <version>3.13.0</version>
+                <executions>
+                    <execution>
+                        <id>repackage</id>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
 
-                    <configuration>
+            </plugin>
 
-                        <release>${java.version}</release>
+        </plugins>
 
-                    </configuration>
+    </pluginManagement>
 
-                </plugin>
-
-                <!-- Spring Boot -->
-
-                <plugin>
-
-                    <groupId>org.springframework.boot</groupId>
-
-                    <artifactId>spring-boot-maven-plugin</artifactId>
-
-                    <version>${spring.boot.version}</version>
-
-                </plugin>
-
-            </plugins>
-
-        </pluginManagement>
-
-    </build>
+</build>
 
 </project>

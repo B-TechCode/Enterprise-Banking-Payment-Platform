@@ -54,15 +54,44 @@ public class AccountService {
 
 	}
 
+	/**
+	 * Enforces that the caller may act on the given account.
+	 *
+	 * <p>Three cases are allowed:</p>
+	 * <ol>
+	 *   <li><b>Administrators</b> - tokens holding {@code admin:accounts}.</li>
+	 *   <li><b>Service callers</b> - client-credentials tokens, which represent a
+	 *       trusted internal service (e.g. the Payment Orchestrator placing a
+	 *       hold) and carry no {@code customer_id} claim to compare against.</li>
+	 *   <li><b>The account owner</b> - a user token whose {@code customer_id}
+	 *       claim matches the account's customer.</li>
+	 * </ol>
+	 *
+	 * <p>The service bypass is deliberately keyed on the grant type combined with
+	 * the <i>absence</i> of a customer identity, not on a scope. Keying it on a
+	 * scope such as {@code fdx:accounts.write} would also exempt ordinary user
+	 * tokens that legitimately hold that scope, removing the ownership check for
+	 * them and allowing one customer to act on another customer's account.</p>
+	 */
 	private void ensureOwnerOrAdmin(Account a) {
-		
-		
-		if (currentUser.hasScope("admin:accounts"))
+
+		// 1) Administrative access.
+		if (currentUser.hasScope("admin:accounts")) {
 			return;
-		
-		
-		var me = currentUser.customerId().orElseThrow(() -> new OwnerAccessDeniedException());
-		
+		}
+
+		var claimedCustomerId = currentUser.customerIdClaim();
+
+		// 2) Trusted service-to-service call: client-credentials grant with no
+		//    customer identity to check against. A client-credentials token that
+		//    *does* carry customer_id is still held to the ownership check below.
+		if (currentUser.isClientCredentials() && claimedCustomerId.isEmpty()) {
+			return;
+		}
+
+		// 3) End-user access: must present a customer_id and own the account.
+		var me = claimedCustomerId.orElseThrow(OwnerAccessDeniedException::new);
+
 		if (!a.getCustomerId().equals(me)) {
 			throw new OwnerAccessDeniedException();
 		}
