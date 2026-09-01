@@ -1,0 +1,45 @@
+server:
+  port: 8095
+
+spring:
+  application:
+    name: ai-commerce-agent
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://dev-vkxlfm4oy207h5bq.us.auth0.com/
+
+auth0:
+  audience: ${AUTH0_AUDIENCE:https://mockbank/api}
+
+# Downstream services are reached through their public REST APIs only.
+# The agent has no datasource pointing at another service.
+account:
+  service:
+    url: http://localhost:8084
+
+biller:
+  service:
+    url: http://localhost:8088
+
+payment:
+  service:
+    url: http://localhost:8086
+
+agent:
+  # Anthropic API key comes from the ANTHROPIC_API_KEY environment variable and
+  # is never stored in configuration.
+  model: claude-opus-5
+  effort: medium
+  # Largest amount the agent may stage for confirmation. Above this it refuses
+  # rather than proposing.
+  max-proposal-amount: 1000.00
+  # How long a staged proposal stays confirmable.
+  proposal-ttl-seconds: 300
+
+logging:
+  level:
+    com.digitalbank.aicommerce: DEBUG
+    org.springframework.security: INFO

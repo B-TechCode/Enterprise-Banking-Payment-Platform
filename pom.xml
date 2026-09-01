@@ -43,6 +43,8 @@
 
         <springdoc.version>2.6.0</springdoc.version>
 
+        <anthropic.version>2.34.0</anthropic.version>
+
         <!-- Shared Libraries -->
 
         <commons.dto.version>1.0.0</commons.dto.version>
@@ -78,6 +80,8 @@
         <module>backend/BillPayWorkerService-develop</module>
 
         <module>backend/SettlementService-develop</module>
+
+        <module>backend/AICommerceAgent</module>
 
         <module>backend/commons-dto-develop</module>
 
@@ -224,6 +228,18 @@
                 <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
 
                 <version>${springdoc.version}</version>
+
+            </dependency>
+
+            <!-- Anthropic Claude API -->
+
+            <dependency>
+
+                <groupId>com.anthropic</groupId>
+
+                <artifactId>anthropic-java</artifactId>
+
+                <version>${anthropic.version}</version>
 
             </dependency>
 
