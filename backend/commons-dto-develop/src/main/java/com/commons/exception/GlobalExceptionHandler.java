@@ -68,6 +68,18 @@ public class GlobalExceptionHandler {
      * and surfaced as 500, so a refused request was indistinguishable from a
      * server fault to the caller and in the logs.</p>
      */
+    /**
+     * Authorization refusal that is not about record ownership, for example a
+     * caller the service will not act for at all. Mapped alongside
+     * OwnerAccessDeniedException so every refusal reports 403 rather than 500.
+     */
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<ErrorResponse> handleForbidden(ForbiddenException ex) {
+        log.debug("ForbiddenException: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(err("FORBIDDEN", "Forbidden", ex.getMessage()));
+    }
+
     @ExceptionHandler(OwnerAccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleOwnerAccessDenied(OwnerAccessDeniedException ex) {
         log.debug("OwnerAccessDeniedException: {}", ex.getMessage());
