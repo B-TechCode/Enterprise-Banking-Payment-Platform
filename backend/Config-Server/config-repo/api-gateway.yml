@@ -63,6 +63,13 @@ spring:
           filters:
             - RewritePath=/workers/(?<segment>.*), /api/mock/central1/${segment}
 
+        - id: ai-commerce-agent
+          uri: lb://ai-commerce-agent
+          predicates:
+            - Path=/ai/**
+          filters:
+            - RewritePath=/ai/(?<segment>.*), /api/v1/agent/${segment}
+
         # =========================
         # OpenAPI routes
         # =========================

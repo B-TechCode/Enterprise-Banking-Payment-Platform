@@ -5,5 +5,6 @@ package com.digitalbank.aicommerce.repo;
  */
 public interface PaymentProposalRepository {
 
-    // TODO: extend JpaRepository once PaymentProposal is mapped.
+    // TODO: extend JpaRepository once PaymentProposal is mapped, with the
+    // TODO: payment confirmation slice.
 }

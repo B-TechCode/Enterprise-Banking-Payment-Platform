@@ -5,6 +5,22 @@ spring:
   application:
     name: ai-commerce-agent
 
+  datasource:
+    url: jdbc:postgresql://localhost:5433/aicommercedb?options=-c%20TimeZone=UTC
+    username: ${DIGITALBANK_DB_USER:postgres}
+    password: ${DIGITALBANK_DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
   security:
     oauth2:
       resourceserver:
