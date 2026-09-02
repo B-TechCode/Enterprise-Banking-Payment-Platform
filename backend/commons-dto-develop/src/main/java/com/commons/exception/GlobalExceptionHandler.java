@@ -61,6 +61,20 @@ public class GlobalExceptionHandler {
                 .body(err("INVALID_CREDS", ex.getMessage(), ex.getMessage()));
     }
 
+    /**
+     * Ownership denial.
+     *
+     * <p>Without this mapping the exception fell through to the generic handler
+     * and surfaced as 500, so a refused request was indistinguishable from a
+     * server fault to the caller and in the logs.</p>
+     */
+    @ExceptionHandler(OwnerAccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleOwnerAccessDenied(OwnerAccessDeniedException ex) {
+        log.debug("OwnerAccessDeniedException: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(err("FORBIDDEN", "Forbidden", ex.getMessage()));
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex) {
         log.debug("AccessDeniedException: {}", ex.getMessage());

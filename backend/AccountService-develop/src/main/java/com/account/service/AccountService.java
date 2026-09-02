@@ -97,6 +97,50 @@ public class AccountService {
 		}
 	}
 
+	/**
+	 * Ownership check keyed on a customer id rather than a loaded account, for
+	 * queries that select by customer instead of by account id.
+	 */
+	private void ensureOwnerOrAdmin(String customerId) {
+
+		if (currentUser.hasScope("admin:accounts")) {
+			return;
+		}
+
+		var claimedCustomerId = currentUser.customerIdClaim();
+
+		if (currentUser.isClientCredentials() && claimedCustomerId.isEmpty()) {
+			return;
+		}
+
+		var me = claimedCustomerId.orElseThrow(OwnerAccessDeniedException::new);
+
+		if (!me.equals(customerId)) {
+			throw new OwnerAccessDeniedException();
+		}
+	}
+
+	/**
+	 * Administrative access only.
+	 *
+	 * <p>Used by operations that span every customer, where there is no single
+	 * owner to compare against. The controller also gates these with an admin
+	 * scope; this is the service-level backstop, because a service method is
+	 * reachable from any in-process caller, not only through its controller.</p>
+	 *
+	 * <p>Deliberately does not admit client-credentials callers: no service on
+	 * the platform needs to enumerate every account.</p>
+	 */
+	private void ensureAdmin() {
+
+		if (currentUser.hasScope("admin:accounts")
+				|| currentUser.hasScope("admin:accounts.read")) {
+			return;
+		}
+
+		throw new OwnerAccessDeniedException();
+	}
+
 	private void emitTransaction(Account acc, String type, BigDecimal amount, String reason, boolean posting,
 			BigDecimal balanceAfterOrNull) {
 
@@ -126,12 +170,15 @@ public class AccountService {
 	/* ---------------- Queries ---------------- */
 
 	public List<AccountResponse> listAll() {
+		ensureAdmin();
 		return accountRepo.findAll().stream().map(mapper::toDto).toList();
 	}
 
 	public AccountResponse get(UUID id) {
-		return mapper
-				.toDto(accountRepo.findById(id).orElseThrow(() -> new IllegalArgumentException("Account not found")));
+		Account a = accountRepo.findById(id)
+				.orElseThrow(() -> new IllegalArgumentException("Account not found"));
+		ensureOwnerOrAdmin(a);
+		return mapper.toDto(a);
 	}
 
 	public AccountBalanceResponse getBalance(UUID id) {
@@ -144,6 +191,7 @@ public class AccountService {
 
 	/** NEW: used by GET /customer/{id}/accounts */
 	public List<AccountResponse> findByCustomerId(String customerId) {
+		ensureOwnerOrAdmin(customerId);
 		return accountRepo.findByCustomerId(customerId).stream().map(mapper::toDto).toList();
 	}
 
@@ -259,6 +307,13 @@ public class AccountService {
 		if (!h.getAccountId().equals(accountId)) {
 			throw new IllegalArgumentException("Hold does not belong to this account");
 		}
+
+		// Load and authorize the account before mutating the hold, so a caller
+		// who does not own the account cannot release funds held against it.
+		Account a = accountRepo.findById(accountId)
+				.orElseThrow(() -> new IllegalArgumentException("Account not found"));
+		ensureOwnerOrAdmin(a);
+
 		if (h.getStatus() != HoldStatus.ACTIVE) {
 			return new HoldResponse(h.getId(), h.getAmount(), h.getStatus(), h.getCreatedAt(), h.getReleaseAt());
 		}
@@ -266,8 +321,6 @@ public class AccountService {
 		h.setStatus(HoldStatus.RELEASED);
 		h.setReason(reason);
 		h = holdRepo.save(h);
-		Account a = accountRepo.findById(accountId)
-				.orElseThrow(() -> new IllegalArgumentException("Account not found"));
 
 		emitTransaction(a, "HOLD_RELEASED", h.getAmount(), reason, true, a.getBalance());
 
