@@ -29,6 +29,14 @@ public class AccountQueryService {
     private final AuditService auditService;
 
     public List<AccountResponse> myAccounts() {
+        return myAccounts(null);
+    }
+
+    /**
+     * Same read, tagged with the conversation it was made for, so the audit trail
+     * shows which turn of which conversation caused it.
+     */
+    public List<AccountResponse> myAccounts(String conversationId) {
 
         String customerId;
         AgentActionLog entry;
@@ -37,14 +45,14 @@ public class AccountQueryService {
             customerId = callerIdentity.requireCustomerId();
         } catch (RuntimeException denied) {
             auditService.record(
-                    AgentActionLog.starting(TOOL_NAME, null, null),
+                    AgentActionLog.starting(TOOL_NAME, null, null, conversationId),
                     ActionOutcome.DENIED,
                     denied.getMessage(),
                     null);
             throw denied;
         }
 
-        entry = AgentActionLog.starting(TOOL_NAME, customerId, callerIdentity.subject());
+        entry = AgentActionLog.starting(TOOL_NAME, customerId, callerIdentity.subject(), conversationId);
 
         try {
             List<AccountResponse> accounts = accountClient.findAccountsByCustomer(customerId);

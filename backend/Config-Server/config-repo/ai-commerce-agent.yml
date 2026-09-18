@@ -45,10 +45,17 @@ payment:
     url: http://localhost:8086
 
 agent:
-  # Anthropic API key comes from the ANTHROPIC_API_KEY environment variable and
-  # is never stored in configuration.
-  model: claude-opus-5
-  effort: medium
+  # The Gemini API key comes from the GEMINI_API_KEY environment variable and is
+  # never stored in configuration. It is read directly from the environment at
+  # startup rather than bound as a property, so it stays out of the Spring
+  # Environment and cannot be served by an actuator endpoint.
+  model: gemini-3.5-flash
+  base-url: https://generativelanguage.googleapis.com/v1beta
+  # Bound on tool calls within a single turn, so a model that keeps calling the
+  # same tool cannot hold a request open.
+  max-tool-iterations: 5
+  request-timeout-seconds: 30
+  temperature: 0.2
   # Largest amount the agent may stage for confirmation. Above this it refuses
   # rather than proposing.
   max-proposal-amount: 1000.00

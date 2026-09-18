@@ -81,11 +81,12 @@
             <artifactId>spring-cloud-starter-openfeign</artifactId>
         </dependency>
 
-        <!-- Anthropic Claude API -->
-        <dependency>
-            <groupId>com.anthropic</groupId>
-            <artifactId>anthropic-java</artifactId>
-        </dependency>
+        <!--
+            The Gemini API is reached over plain REST with RestClient, which
+            spring-boot-starter-web already provides. The vendor SDK would pull
+            gRPC, protobuf and Guava into a Spring Cloud application to serve a
+            single endpoint, so it is deliberately not used.
+        -->
 
         <!-- Shared platform modules -->
         <dependency>

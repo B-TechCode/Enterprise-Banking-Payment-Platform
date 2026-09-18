@@ -85,8 +85,22 @@ public class AgentActionLog {
     private OffsetDateTime occurredAt;
 
     public static AgentActionLog starting(String toolName, String customerId, String subject) {
+        return starting(toolName, customerId, subject, null);
+    }
+
+    /**
+     * Starts an entry belonging to a known conversation.
+     *
+     * <p>A null conversation id means the action was not part of one, for example
+     * the direct read-only endpoint. It is then given its own id so the entry is
+     * still addressable, rather than being left blank.</p>
+     */
+    public static AgentActionLog starting(String toolName,
+                                          String customerId,
+                                          String subject,
+                                          String conversationId) {
         return AgentActionLog.builder()
-                .conversationId(UUID.randomUUID().toString())
+                .conversationId(conversationId != null ? conversationId : UUID.randomUUID().toString())
                 .customerId(customerId)
                 .subject(subject)
                 .toolName(toolName)
