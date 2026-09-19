@@ -8,11 +8,11 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: https://dev-vkxlfm4oy207h5bq.us.auth0.com/
+          issuer-uri: ${AUTH0_ISSUER_URI:https://dev-vkxlfm4oy207h5bq.us.auth0.com/}
 
 consent:
   service:
-    url: http://localhost:8096/api/v1
+    url: ${CONSENT_SERVICE_URL:http://localhost:8096/api/v1}
 
 auth0:
   # Tenant and Management API credentials are supplied by the environment so no

@@ -3,10 +3,10 @@ spring:
     name: api-gateway
 
   config:
-    import: optional:configserver:http://localhost:8888
+    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
 
   security:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: https://dev-vkxlfm4oy207h5bq.us.auth0.com/
+          issuer-uri: ${AUTH0_ISSUER_URI:https://dev-vkxlfm4oy207h5bq.us.auth0.com/}

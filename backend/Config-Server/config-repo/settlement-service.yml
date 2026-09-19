@@ -6,9 +6,9 @@ spring:
     name: settlement-service
 
   datasource:
-    url: jdbc:postgresql://localhost:5433/settlementdb?options=-c%20TimeZone=UTC
-    username: postgres
-    password: postgres
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/settlementdb?options=-c%20TimeZone=UTC
+    username: ${DIGITALBANK_DB_USER:postgres}
+    password: ${DIGITALBANK_DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
 
   jpa:
@@ -18,7 +18,7 @@ spring:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
 
   kafka:
-    bootstrap-servers: localhost:9092
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
 
     consumer:
       group-id: ${SETTLEMENT_CONSUMER_GROUP:settlement-service}

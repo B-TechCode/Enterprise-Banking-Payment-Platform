@@ -1,0 +1,21 @@
+# Allowlist. Every service image is built from the repository root, because
+# each service depends on the root pom and the shared commons-* modules. The
+# build needs those sources and nothing else, so everything is excluded first
+# and only they are let back in.
+*
+!pom.xml
+!backend/
+
+# Build output and local tooling state.
+backend/**/target/
+backend/**/logs/
+backend/**/*.log
+backend/**/.idea/
+backend/**/.vscode/
+
+# Compose files, .env and monitoring config are runtime inputs, not build
+# inputs. Excluding this directory also guarantees a .env holding real secrets
+# can never be copied into an image layer.
+backend/infrastructure/
+**/.env
+**/.env.*

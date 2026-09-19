@@ -9,13 +9,12 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: https://dev-vkxlfm4oy207h5bq.us.auth0.com/
+          issuer-uri: ${AUTH0_ISSUER_URI:https://dev-vkxlfm4oy207h5bq.us.auth0.com/}
 
-  datasource:
-    url: "jdbc:postgresql://127.0.0.1:5433/accountsdb?options=-c%20TimeZone=UTC"
-    username: postgres
-    password: postgres
-    driver-class-name: org.postgresql.Driver
+  # The datasource lives in config-repo/account-service.yml, alongside every
+  # other service's, so its host can be supplied by the environment. Keeping a
+  # copy here would shadow it with a hardcoded 127.0.0.1, which inside a
+  # container points at the container itself.
 
   jpa:
     hibernate:

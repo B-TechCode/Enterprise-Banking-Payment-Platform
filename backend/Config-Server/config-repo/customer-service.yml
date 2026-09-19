@@ -6,9 +6,9 @@ spring:
     name: customer-service
 
   datasource:
-    url: jdbc:postgresql://localhost:5433/customerdb?options=-c%20TimeZone=UTC
-    username: postgres
-    password: postgres
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/customerdb?options=-c%20TimeZone=UTC
+    username: ${DIGITALBANK_DB_USER:postgres}
+    password: ${DIGITALBANK_DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
 
   jpa:
@@ -43,7 +43,7 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: https://dev-vkxlfm4oy207h5bq.us.auth0.com/
+          issuer-uri: ${AUTH0_ISSUER_URI:https://dev-vkxlfm4oy207h5bq.us.auth0.com/}
 
 resilience4j:
   circuitbreaker:
@@ -61,7 +61,7 @@ resilience4j:
 
 auth:
   service:
-    url: http://localhost:8094/
+    url: ${AUTH_USER_SERVICE_URL:http://localhost:8094/}
 
 auth0:
   audience: https://mockbank/api

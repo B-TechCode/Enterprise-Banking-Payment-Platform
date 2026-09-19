@@ -1,4 +1,4 @@
-# customer-service
+# ai-commerce-agent
 #
 # Build context is the repository root, not this directory: the service depends
 # on the root pom and the shared commons-* modules, which a context limited to
@@ -20,8 +20,8 @@ COPY backend ./backend
 # -am builds only the modules this service needs (itself plus commons-*).
 # Tests are not compiled here; they belong to the test pipeline, not the image.
 RUN --mount=type=cache,target=/root/.m2,sharing=locked \
-    mvn -B -q -pl backend/CustomerService-develop -am -Dmaven.test.skip=true package \
- && cp backend/CustomerService-develop/target/CustomerService-0.0.1-SNAPSHOT.jar /workspace/app.jar
+    mvn -B -q -pl backend/AICommerceAgent -am -Dmaven.test.skip=true package \
+ && cp backend/AICommerceAgent/target/AICommerceAgent-0.0.1-SNAPSHOT.jar /workspace/app.jar
 
 # ---- runtime ----------------------------------------------------------------
 # JRE only: no compiler or Maven in the image that runs.
@@ -41,7 +41,7 @@ COPY --from=build --chown=app:app /workspace/app.jar app.jar
 
 USER app
 
-EXPOSE 8083
+EXPOSE 8095
 
 # The JVM sizes its heap from the container's memory limit, but defaults to only
 # a quarter of it. docker-compose.yml overrides this with the tuned value; this
