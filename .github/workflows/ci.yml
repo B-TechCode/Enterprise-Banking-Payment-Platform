@@ -1,0 +1,76 @@
+name: CI
+
+# Build and test verification only. Nothing here builds images, publishes
+# artifacts or deploys: every run answers two questions, "does it compile?"
+# and "do the tests pass?".
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A newer push to the same branch or PR cancels the run it supersedes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only: this workflow publishes nothing and deploys nothing.
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Compile and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      # cache: maven caches ~/.m2/repository, keyed on the hash of every
+      # pom.xml, so dependencies are downloaded once rather than on every run.
+      - name: Set up Java 21 with Maven dependency cache
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # Its own step, so a build break reads as "Compile failed" rather than
+      # being buried inside a test failure.
+      - name: Compile (full reactor)
+        run: mvn -B -ntp compile
+
+      # -fae (fail at end) runs every module's tests even after one fails, so
+      # one red module does not hide the state of the others.
+      #
+      # The excludes file lists tests that cannot pass on a bare runner, each
+      # with its reason. Its path must be absolute: surefire resolves a relative
+      # path against each module's directory, not the repository root.
+      - name: Test
+        id: test
+        run: >
+          mvn -B -ntp -fae test
+          -Dsurefire.excludesFile=${{ github.workspace }}/.github/ci/surefire-excludes.txt
+
+      # GEMINI_API_KEY is deliberately not referenced anywhere in this workflow,
+      # so the live Gemini test must skip. This step proves it did, rather than
+      # assuming it.
+      - name: Verify the Gemini live test was skipped
+        run: python3 .github/ci/verify-gemini-skip.py
+
+      # Written to the run's summary page, and teed into the log so the same
+      # table can be read from the command line (gh run view --log).
+      - name: Test summary
+        if: always()
+        run: python3 .github/ci/test-summary.py | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: backend/**/target/surefire-reports/
+          retention-days: 7
