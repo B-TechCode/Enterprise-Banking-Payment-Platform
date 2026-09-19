@@ -24,9 +24,22 @@ REPORT = Path(
 )
 
 
+IN_ACTIONS = bool(os.environ.get("GITHUB_ACTIONS"))
+
+
 def fail(message: str) -> None:
     print(f"FAIL: {message}")
+    if IN_ACTIONS:
+        # Annotations can be read through the public API without logging in,
+        # unlike the job log.
+        print(f"::error title=Gemini live test::{message}")
     sys.exit(1)
+
+
+def ok(message: str) -> None:
+    print(f"OK: {message}")
+    if IN_ACTIONS:
+        print(f"::notice title=Gemini live test::OK: {message}")
 
 
 if not REPORT.is_file():
@@ -50,9 +63,9 @@ if tests < 1:
 if key_present:
     if skipped or failures or errors:
         fail("key is present, so the live test must run and pass")
-    print("OK: key present, live test ran and passed")
+    ok("key present, live test ran and passed")
 else:
     if skipped != tests:
         fail("no key is present, so the live test must be skipped, "
              "but it ran against the real API")
-    print("OK: no key present, live test was skipped")
+    ok("no key present, live test was skipped")

@@ -62,10 +62,24 @@ jobs:
         run: python3 .github/ci/verify-gemini-skip.py
 
       # Written to the run's summary page, and teed into the log so the same
-      # table can be read from the command line (gh run view --log).
-      - name: Test summary
+      # table can be read from the command line (gh run view --log). Also
+      # fails the job if a module's tests silently did not run.
+      #
+      # shell: bash is required, not cosmetic. It is what turns on pipefail.
+      # GitHub's default shell does not use it, so the script's failing exit
+      # status would be lost to tee's successful one and the guard would
+      # never fail the job.
+      - name: Test summary and execution guard
         if: always()
+        shell: bash
         run: python3 .github/ci/test-summary.py | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # The same totals as a run annotation. Job logs and summaries need a login
+      # to read, even on a public repository; annotations do not, so a run's
+      # real numbers can be confirmed through the API.
+      - name: Publish test totals
+        if: always()
+        run: python3 .github/ci/test-summary.py --annotate
 
       - name: Upload test reports
         if: failure()
