@@ -14,6 +14,7 @@ import com.digitalbank.aicommerce.domain.ActionOutcome;
 import com.digitalbank.aicommerce.domain.AgentActionLog;
 import com.digitalbank.aicommerce.dto.ChatRequest;
 import com.digitalbank.aicommerce.dto.ChatResponse;
+import com.digitalbank.aicommerce.dto.ProposalSummary;
 import com.digitalbank.aicommerce.llm.GeminiClient;
 import com.digitalbank.aicommerce.llm.GeminiContent;
 import com.digitalbank.aicommerce.llm.GeminiException;
@@ -65,6 +66,12 @@ public class AgentOrchestrator {
     private final ObjectMapper objectMapper;
 
     /**
+     * Used only to read a staged proposal back for the reply. The orchestrator
+     * never calls {@code confirm}: execution is not reachable from a chat turn.
+     */
+    private final ProposalService proposalService;
+
+    /**
      * Runs one conversation turn to completion: model, tools, model again, until
      * the model answers in words or the iteration budget runs out.
      */
@@ -87,13 +94,20 @@ public class AgentOrchestrator {
         String subject = callerIdentity.subject();
 
         try {
-            String reply = runLoop(request.message(), conversationId);
+            TurnOutcome turn = runLoop(request.message(), conversationId);
+
+            // Read back from storage rather than from the tool result, so what the
+            // user is shown is the stored proposal and not a value that travelled
+            // through anything the model produced.
+            ProposalSummary proposal = turn.proposalId() == null
+                    ? null
+                    : proposalService.findSummary(turn.proposalId(), customerId).orElse(null);
 
             auditTurn(conversationId, customerId, subject, ActionOutcome.SUCCESS,
-                    "turn completed, reply length " + reply.length());
+                    "turn completed, reply length " + turn.reply().length()
+                            + (proposal == null ? "" : ", proposal " + proposal.proposalId()));
 
-            // No proposal in this slice: the agent can only read accounts.
-            return new ChatResponse(conversationId, reply, null);
+            return new ChatResponse(conversationId, turn.reply(), proposal);
 
         } catch (ForbiddenException denied) {
             auditTurn(conversationId, customerId, subject, ActionOutcome.DENIED, denied.getMessage());
@@ -105,12 +119,22 @@ public class AgentOrchestrator {
         }
     }
 
-    private String runLoop(String userMessage, String conversationId) {
+    /** What one turn produced: words for the user, and a proposal if one was staged. */
+    private record TurnOutcome(String reply, String proposalId) {
+    }
+
+    /** One tool call's result: the part to send back, and any proposal it staged. */
+    private record DispatchResult(GeminiPart part, String proposalId) {
+    }
+
+    private TurnOutcome runLoop(String userMessage, String conversationId) {
 
         GeminiContent systemInstruction = GeminiContent.user(AgentSystemPrompt.TEXT);
 
         List<GeminiContent> conversation = new ArrayList<>();
         conversation.add(GeminiContent.user(userMessage));
+
+        String stagedProposalId = null;
 
         for (int iteration = 0; iteration < properties.getMaxToolIterations(); iteration++) {
 
@@ -122,7 +146,7 @@ public class AgentOrchestrator {
             if (modelTurn == null || modelTurn.parts() == null || modelTurn.parts().isEmpty()) {
                 log.warn("empty model turn conversation={} feedback={}",
                         conversationId, response.promptFeedback());
-                return NO_REPLY;
+                return new TurnOutcome(NO_REPLY, stagedProposalId);
             }
 
             // Appended verbatim, which is what preserves each part's thought
@@ -135,12 +159,17 @@ public class AgentOrchestrator {
                     .toList();
 
             if (toolCalls.isEmpty()) {
-                return extractText(modelTurn, conversationId);
+                return new TurnOutcome(extractText(modelTurn, conversationId), stagedProposalId);
             }
 
             List<GeminiPart> results = new ArrayList<>();
             for (GeminiPart call : toolCalls) {
-                results.add(dispatch(call.functionCall(), conversationId));
+                DispatchResult dispatched = dispatch(call.functionCall(), conversationId);
+                results.add(dispatched.part());
+
+                if (dispatched.proposalId() != null) {
+                    stagedProposalId = dispatched.proposalId();
+                }
             }
 
             conversation.add(GeminiContent.toolResults(results));
@@ -160,7 +189,7 @@ public class AgentOrchestrator {
      * can tell the user something useful instead of the request collapsing. The
      * exception is an authorization failure, which ends the turn.</p>
      */
-    private GeminiPart dispatch(GeminiFunctionCall call, String conversationId) {
+    private DispatchResult dispatch(GeminiFunctionCall call, String conversationId) {
 
         String name = call == null ? null : call.name();
         Map<String, Object> arguments = call == null || call.args() == null ? Map.of() : call.args();
@@ -181,15 +210,24 @@ public class AgentOrchestrator {
                     "tool is not in the agent allowlist",
                     null);
 
-            return GeminiPart.ofFunctionResponse(callId, String.valueOf(name),
-                    Map.of("error", "This tool is not available to you."));
+            return new DispatchResult(
+                    GeminiPart.ofFunctionResponse(callId, String.valueOf(name),
+                            Map.of("error", "This tool is not available to you.")),
+                    null);
         }
 
         try {
             // The tool audits its own downstream call; the identity it acts for
             // comes from the token inside, not from anything passed here.
             Map<String, Object> result = tool.execute(arguments, conversationId);
-            return GeminiPart.ofFunctionResponse(callId, tool.name(), result);
+
+            // A staged proposal is noted so the reply can carry it. Only the id
+            // travels; the details are read back from storage afterwards.
+            Object proposalId = result.get("proposalId");
+
+            return new DispatchResult(
+                    GeminiPart.ofFunctionResponse(callId, tool.name(), result),
+                    proposalId == null ? null : String.valueOf(proposalId));
 
         } catch (ForbiddenException denied) {
             throw denied;
@@ -197,8 +235,10 @@ public class AgentOrchestrator {
         } catch (RuntimeException failure) {
             log.error("tool '{}' failed conversation={}", tool.name(), conversationId, failure);
 
-            return GeminiPart.ofFunctionResponse(callId, tool.name(),
-                    Map.of("error", "This information could not be retrieved right now."));
+            return new DispatchResult(
+                    GeminiPart.ofFunctionResponse(callId, tool.name(),
+                            Map.of("error", "This information could not be retrieved right now.")),
+                    null);
         }
     }
 

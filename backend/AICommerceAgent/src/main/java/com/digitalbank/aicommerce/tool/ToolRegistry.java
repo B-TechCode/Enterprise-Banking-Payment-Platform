@@ -31,8 +31,17 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class ToolRegistry {
 
-    /** The only tools that may ever be offered to the model in this slice. */
-    private static final Set<String> ALLOWED = Set.of("get_my_accounts");
+    /**
+     * The only tools that may ever be offered to the model.
+     *
+     * <p>Note what is absent: nothing here executes a payment. The payment tool
+     * stages a proposal and stops. Execution lives behind a separate endpoint
+     * that the model is not part of.</p>
+     */
+    private static final Set<String> ALLOWED = Set.of(
+            "get_my_accounts",
+            "get_my_billers",
+            "propose_bill_payment");
 
     private final List<AgentTool> discoveredTools;
 

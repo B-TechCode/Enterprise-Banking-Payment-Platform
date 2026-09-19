@@ -1,10 +1,18 @@
 package com.digitalbank.aicommerce.repo;
 
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import com.digitalbank.aicommerce.domain.PaymentProposal;
+import com.digitalbank.aicommerce.domain.ProposalStatus;
+
 /**
  * Persistence for staged payment proposals.
  */
-public interface PaymentProposalRepository {
+public interface PaymentProposalRepository extends JpaRepository<PaymentProposal, UUID> {
 
-    // TODO: extend JpaRepository once PaymentProposal is mapped, with the
-    // TODO: payment confirmation slice.
+    List<PaymentProposal> findByCustomerIdAndStatusOrderByCreatedAtDesc(
+            String customerId, ProposalStatus status);
 }

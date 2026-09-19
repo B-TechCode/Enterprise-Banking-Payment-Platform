@@ -35,30 +35,36 @@ class ToolRegistryTest {
     }
 
     @Test
-    @DisplayName("registers the allowlisted tool and declares it to the model")
-    void registersAllowlistedTool() {
+    @DisplayName("registers the allowlisted tools and declares them to the model")
+    void registersAllowlistedTools() {
 
-        ToolRegistry registry = new ToolRegistry(List.of(new StubTool("get_my_accounts")));
+        ToolRegistry registry = new ToolRegistry(List.of(
+                new StubTool("get_my_accounts"),
+                new StubTool("get_my_billers"),
+                new StubTool("propose_bill_payment")));
         registry.register();
 
         assertThat(registry.find("get_my_accounts")).isPresent();
+        assertThat(registry.find("get_my_billers")).isPresent();
+        assertThat(registry.find("propose_bill_payment")).isPresent();
+
         assertThat(registry.declarations())
-                .singleElement()
                 .extracting(declaration -> declaration.name())
-                .isEqualTo("get_my_accounts");
+                .containsExactlyInAnyOrder(
+                        "get_my_accounts", "get_my_billers", "propose_bill_payment");
     }
 
     @Test
     @DisplayName("refuses to start when a tool outside the allowlist is on the classpath")
     void rejectsToolOutsideAllowlist() {
 
-        // A payment tool that became a bean by accident must break the context,
-        // not quietly become something the model can call.
-        ToolRegistry registry = new ToolRegistry(List.of(new StubTool("propose_bill_payment")));
+        // A tool that executes rather than proposes must break the context, not
+        // quietly become something the model can call.
+        ToolRegistry registry = new ToolRegistry(List.of(new StubTool("execute_bill_payment")));
 
         assertThatThrownBy(registry::register)
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("propose_bill_payment")
+                .hasMessageContaining("execute_bill_payment")
                 .hasMessageContaining("allowlist");
     }
 
@@ -70,6 +76,7 @@ class ToolRegistryTest {
         registry.register();
 
         assertThat(registry.find("transfer_funds")).isEmpty();
+        assertThat(registry.find("confirm_bill_payment")).isEmpty();
         assertThat(registry.find(null)).isEmpty();
     }
 }
