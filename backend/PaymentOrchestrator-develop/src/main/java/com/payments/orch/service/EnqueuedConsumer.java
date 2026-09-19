@@ -32,7 +32,11 @@ public class EnqueuedConsumer {
     if (processed.existsByHandlerAndEventId("enqueued", evt.getEventId())) return;
 
     Payment p = paymentRepo.findById(evt.getPaymentId()).orElse(null);
-    if (p != null) {
+    // Only a payment still awaiting batching is moved to BATCHED. A late or
+    // repeated enqueue event must not move a payment backwards: a POSTED
+    // payment moved back to BATCHED would look unfinished, and a later
+    // duplicate confirmation could then debit it a second time.
+    if (p != null && p.getState().canMoveTo(PaymentState.BATCHED)) {
       p.setState(PaymentState.BATCHED);
       p.setBatchId(evt.getBatchId());
       p.setUpdatedAt(OffsetDateTime.now());
