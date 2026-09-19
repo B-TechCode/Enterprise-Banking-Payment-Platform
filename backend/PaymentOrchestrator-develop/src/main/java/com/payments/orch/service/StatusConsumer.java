@@ -40,7 +40,30 @@ public class StatusConsumer {
     Payment p = paymentRepo.findById((evt.paymentId())).orElse(null);
     if (p == null) return;
 
-    if ("POSTED".equalsIgnoreCase(evt.status())) {
+    PaymentState target = "POSTED".equalsIgnoreCase(evt.status())
+        ? PaymentState.POSTED
+        : PaymentState.FAILED;
+
+    // Deduplicating by event id is not enough on its own. Settlement gives every
+    // status event a fresh id, so one confirmation handled twice arrives as two
+    // events with different ids. Without this check the second POSTED debited
+    // the account again, and a late FAILED marked a debited payment as failed.
+    // A finished payment is therefore never touched: no Account Service call,
+    // no state change. The event is still recorded, so it is not redelivered.
+    if (!p.getState().canMoveTo(target)) {
+      if (p.getState() != target) {
+        // POSTED after FAILED, or FAILED after POSTED: the bank's two answers
+        // contradict each other. Not something to resolve automatically.
+        log.error("Conflicting status {} for payment {} already {}; needs manual reconciliation",
+            target, p.getPaymentId(), p.getState());
+      } else {
+        log.info("Duplicate status {} for payment {} ignored", target, p.getPaymentId());
+      }
+      markProcessed(evt);
+      return;
+    }
+
+    if (target == PaymentState.POSTED) {
     	PostingRequest r = new PostingRequest(p.getAmountValue(), p.getReason());
     	accountM2MClient.releaseHold(p.getDebtorAccountId(), p.getPaymentId());
     	accountM2MClient.debit(p.getDebtorAccountId(),null, r);
@@ -54,6 +77,10 @@ public class StatusConsumer {
     p.setUpdatedAt(OffsetDateTime.now());
     paymentRepo.save(p);
 
+    markProcessed(evt);
+  }
+
+  private void markProcessed(BillpayStatusEvent evt) {
     processed.save(ProcessedEvent.builder()
         .handler("status").eventId(evt.eventId().toString())
         .processedAt(OffsetDateTime.now()).build());

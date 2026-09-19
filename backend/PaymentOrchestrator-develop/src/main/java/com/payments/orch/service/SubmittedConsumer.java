@@ -46,8 +46,13 @@ public class SubmittedConsumer {
     List<Payment> list = paymentRepo.findAllByBatchId(UUID.fromString(evt.getBatchId()));
     var now = OffsetDateTime.now();
     for (var p : list) {
-      p.setState(com.payments.orch.domain.PaymentState.SUBMITTED);
-      p.setUpdatedAt(now);
+      // Only payments not yet submitted move forward. A late batch event must
+      // not move a finished payment back to SUBMITTED: it would look unfinished
+      // again, and a later duplicate confirmation could then debit it twice.
+      if (p.getState().canMoveTo(com.payments.orch.domain.PaymentState.SUBMITTED)) {
+        p.setState(com.payments.orch.domain.PaymentState.SUBMITTED);
+        p.setUpdatedAt(now);
+      }
     }
     paymentRepo.saveAll(list);
 
