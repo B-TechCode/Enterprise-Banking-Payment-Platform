@@ -220,6 +220,13 @@ public class AccountService {
 		Optional<Account> existing = accountRepo.findByRequestFingerprint(fp);
 		if (existing.isPresent()) {
 			Account a = existing.get();
+			// A fingerprint match is only a replay if the caller may see the
+			// account it matched. The fingerprint is derived from caller-supplied
+			// fields (or is the caller's own Idempotency-Key), so another customer
+			// can produce a match on purpose or, since it is a 32-bit hash, by
+			// accident. Without this check the replay path handed back that
+			// customer's account, balance included, with no ownership check at all.
+			ensureOwnerOrAdmin(a);
 			return mapper.toDto(a);
 		}
 
