@@ -309,6 +309,33 @@ class PaymentLifecycleIT {
                 .isEqualTo(1);
     }
 
+    @Test
+    @Order(8)
+    @DisplayName("paying from an account the caller does not own is refused, not reported as a server error")
+    void payingFromAnotherCustomersAccountIsRefused() {
+        // The caller holds every scope, so the scope check passes and the
+        // request reaches Account Service, which refuses the hold because the
+        // account is not theirs. Before the downstream status was translated,
+        // that refusal reached the caller as a 500: the platform reporting its
+        // own failure for a request it had correctly declined.
+        String intruderToken = stack.identity().userToken(
+                "cust-" + UUID.randomUUID(), IdentityProviderStub.allUserScopes().toArray(String[]::new));
+
+        var response = Rest.post(payments() + "/payments/billpay", intruderToken, """
+                {"debtorAccountId":"%s","billerReferenceNumber":"%s","invoiceReference":"INV-003",
+                 "executionDate":"%s","amount":{"value":5.00,"currency":"CAD"},"note":"not my account"}
+                """.formatted(accountId, billerReference, LocalDate.now()),
+                "Idempotency-Key", "integration-intruder-" + UUID.randomUUID());
+
+        assertThat(response.status())
+                .as("a refusal, not a server error")
+                .isEqualTo(403);
+
+        assertThat(response.raw())
+                .as("the downstream response body must not be passed on")
+                .doesNotContain("com.account", "ensureOwnerOrAdmin", "select ");
+    }
+
     // ----------------------------------------------------------- queries
 
     private String paymentState() {

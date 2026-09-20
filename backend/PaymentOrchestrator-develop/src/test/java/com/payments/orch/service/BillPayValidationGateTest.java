@@ -30,6 +30,7 @@ import org.mockito.quality.Strictness;
 
 import com.account.dto.HoldResponse;
 import com.account.dto.HoldStatus;
+import com.commons.exception.ForbiddenException;
 import com.commons.security.CurrentUser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.payments.orch.client.AccountClient;
@@ -107,6 +108,24 @@ class BillPayValidationGateTest {
                 .hasMessage(code);
 
         verifyNoInteractions(accounts);
+        verify(paymentRepo, never()).save(any());
+        verifyNoInteractions(outboxRepo);
+    }
+
+    @Test
+    @DisplayName("a payment refused by Account Service records nothing")
+    void refusedHoldRecordsNothing() {
+        // Account Service refuses a hold on an account the caller does not own.
+        // The ErrorDecoder turns that 403 into a ForbiddenException, which the
+        // shared handler reports as a 403 rather than a 500. What matters here
+        // is that the refusal leaves no half-made payment behind.
+        BillPayRequest valid = request(BILLER, LocalDate.now(), "CAD");
+        when(accounts.placeHold(any(), any(), any()))
+                .thenThrow(new ForbiddenException("not your account"));
+
+        assertThatThrownBy(() -> orchestrator.acceptBillPay(valid, IDEM_KEY))
+                .isInstanceOf(ForbiddenException.class);
+
         verify(paymentRepo, never()).save(any());
         verifyNoInteractions(outboxRepo);
     }
