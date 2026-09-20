@@ -130,6 +130,7 @@ class PaymentEventRedeliveryTest {
     }
 
     private void verifyNoMoneyMoved() {
+        verify(accounts, never()).captureHold(any(), any(), any());
         verify(accounts, never()).debit(any(), any(), any(), any());
         verify(accounts, never()).releaseHold(any(), any(), any());
     }
@@ -214,7 +215,7 @@ class PaymentEventRedeliveryTest {
             deliverSubmitted("sub-late");     // late batch event
             deliverStatus("POSTED");          // duplicate confirmation, new event id
 
-            verify(accounts, times(1)).debit(eq(accountId), any(), any(), any());
+            verify(accounts, times(1)).captureHold(eq(accountId), eq(paymentId), any());
             assertThat(payment.getState()).isEqualTo(PaymentState.POSTED);
         }
     }
@@ -251,19 +252,15 @@ class PaymentEventRedeliveryTest {
     void postingsCarryIdempotencyKeys() throws Exception {
         deliverStatus("POSTED");
 
-        ArgumentCaptor<String> releaseKey = ArgumentCaptor.forClass(String.class);
-        ArgumentCaptor<String> debitKey = ArgumentCaptor.forClass(String.class);
-        verify(accounts).releaseHold(eq(accountId), eq(paymentId), releaseKey.capture());
-        verify(accounts).debit(eq(accountId), any(), debitKey.capture(), any());
+        ArgumentCaptor<String> captureKey = ArgumentCaptor.forClass(String.class);
+        verify(accounts).captureHold(eq(accountId), eq(paymentId), captureKey.capture());
 
-        assertThat(releaseKey.getValue()).startsWith(paymentId.toString());
-        assertThat(debitKey.getValue()).startsWith(paymentId.toString());
+        assertThat(captureKey.getValue()).startsWith(paymentId.toString());
 
-        // Keys are unique per account, so sharing one between the two postings
-        // would let the release claim it and the debit be skipped entirely.
-        assertThat(debitKey.getValue())
-                .as("the debit must not reuse the release's key")
-                .isNotEqualTo(releaseKey.getValue());
+        // A confirmed payment takes the held funds in one operation; releasing
+        // first would leave them spendable in between.
+        verify(accounts, never()).releaseHold(any(), any(), any());
+        verify(accounts, never()).debit(any(), any(), any(), any());
     }
 
     @Test
@@ -273,12 +270,12 @@ class PaymentEventRedeliveryTest {
         payment.setState(PaymentState.SUBMITTED);   // as if the local commit had rolled back
         deliverStatus("POSTED");
 
-        ArgumentCaptor<String> debitKey = ArgumentCaptor.forClass(String.class);
-        verify(accounts, times(2)).debit(eq(accountId), any(), debitKey.capture(), any());
+        ArgumentCaptor<String> captureKey = ArgumentCaptor.forClass(String.class);
+        verify(accounts, times(2)).captureHold(eq(accountId), eq(paymentId), captureKey.capture());
 
-        assertThat(debitKey.getAllValues())
+        assertThat(captureKey.getAllValues())
                 .as("a redelivery must present the same key, or the money moves twice")
-                .containsExactly(debitKey.getAllValues().get(0), debitKey.getAllValues().get(0));
+                .containsExactly(captureKey.getAllValues().get(0), captureKey.getAllValues().get(0));
     }
 
     // ----------------------------------------------- existing protections
@@ -288,24 +285,23 @@ class PaymentEventRedeliveryTest {
     class ExistingProtections {
 
         @Test
-        @DisplayName("a POSTED for an unfinished payment releases the hold, then debits once")
-        void postedReleasesThenDebitsOnce() throws Exception {
+        @DisplayName("a POSTED for an unfinished payment captures the hold once")
+        void postedCapturesOnce() throws Exception {
             // Positive control: proves the path the guards protect still runs.
             deliverStatus("POSTED");
 
-            InOrder order = inOrder(accounts);
-            order.verify(accounts).releaseHold(eq(accountId), eq(paymentId), any());
-            order.verify(accounts).debit(eq(accountId), any(), any(), any());
-            verify(accounts, times(1)).debit(any(), any(), any(), any());
+            verify(accounts, times(1)).captureHold(eq(accountId), eq(paymentId), any());
             assertThat(payment.getState()).isEqualTo(PaymentState.POSTED);
         }
 
         @Test
-        @DisplayName("a FAILED for an unfinished payment releases the hold and does not debit")
-        void failedReleasesWithoutDebit() throws Exception {
+        @DisplayName("a FAILED for an unfinished payment releases the hold and takes no money")
+        void failedReleasesWithoutTakingMoney() throws Exception {
+            // Nothing is owed, so the reservation is given up rather than taken.
             deliverStatus("FAILED");
 
             verify(accounts).releaseHold(eq(accountId), eq(paymentId), any());
+            verify(accounts, never()).captureHold(any(), any(), any());
             verify(accounts, never()).debit(any(), any(), any(), any());
             assertThat(payment.getState()).isEqualTo(PaymentState.FAILED);
         }
