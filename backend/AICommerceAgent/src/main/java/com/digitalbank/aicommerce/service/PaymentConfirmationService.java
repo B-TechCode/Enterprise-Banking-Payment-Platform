@@ -10,6 +10,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.commons.exception.ConflictException;
+import com.commons.exception.ForbiddenException;
+import com.commons.exception.InsufficientFundsException;
 import com.commons.exception.ResourceNotFoundException;
 import com.commons.exception.UpstreamException;
 import com.digitalbank.aicommerce.client.PaymentFeignClient;
@@ -67,7 +69,14 @@ public class PaymentConfirmationService {
      * applies to marking a lapsed proposal EXPIRED.</p>
      */
     @Transactional(noRollbackFor = {
-            UpstreamException.class, ConflictException.class, ResourceNotFoundException.class })
+            UpstreamException.class, ConflictException.class, ResourceNotFoundException.class,
+            // Refusals from the orchestrator reach this method now that
+            // downstream statuses are translated rather than flattened. They
+            // belong here for the same reason as the rest: a rollback would
+            // return the proposal to PENDING_CONFIRMATION and quietly undo the
+            // marker that makes a retry replay against the same
+            // Idempotency-Key. PaymentConfirmationRollbackTest pins the list.
+            ForbiddenException.class, InsufficientFundsException.class })
     public PaymentConfirmationResponse confirm(UUID proposalId) {
 
         String customerId = callerIdentity.requireCustomerId();
@@ -137,14 +146,36 @@ public class PaymentConfirmationService {
         try {
             accepted = paymentClient.billPay(proposal.getId().toString(), command);
 
+        } catch (ForbiddenException refused) {
+            // The orchestrator declined the payment itself, rather than failing
+            // to answer. Reporting that as a server error would tell the
+            // customer the assistant broke when in fact their payment was
+            // refused, and for a reason they may be able to act on.
+            log.warn("payment refused for proposal={}: {}", proposal.getId(), refused.getMessage());
+
+            audit(customerId, subject, conversationId, proposalId, ActionOutcome.DENIED,
+                    "orchestrator refused the payment: " + refused.getMessage());
+
+            throw refused;
+
+        } catch (InsufficientFundsException | ConflictException | ResourceNotFoundException refused) {
+            log.warn("payment declined for proposal={}: {}", proposal.getId(), refused.getMessage());
+
+            audit(customerId, subject, conversationId, proposalId, ActionOutcome.ERROR,
+                    "orchestrator declined the payment: " + refused.getMessage());
+
+            throw refused;
+
         } catch (RuntimeException failure) {
-            log.error("payment orchestrator rejected proposal={}", proposal.getId(), failure);
+            log.error("payment orchestrator did not answer for proposal={}", proposal.getId(), failure);
 
             audit(customerId, subject, conversationId, proposalId, ActionOutcome.ERROR,
                     "orchestrator call failed: " + failure.getMessage());
 
             // Left CONFIRMED on purpose: retrying replays the same
             // Idempotency-Key, which is safe. Returning it to pending is not.
+            // The same holds for the refusals above: nothing was charged, and
+            // the proposal stays confirmable so a retry can settle it.
             throw new UpstreamException(
                     "The payment could not be submitted. It has not been sent; you can retry.");
         }
