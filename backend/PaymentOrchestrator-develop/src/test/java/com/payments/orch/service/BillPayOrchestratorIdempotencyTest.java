@@ -1,5 +1,8 @@
 package com.payments.orch.service;
 
+import com.account.dto.HoldResponse;
+import com.account.dto.HoldStatus;
+import com.commons.security.CurrentUser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.payments.orch.client.AccountClient;
 import com.payments.orch.domain.Payment;
@@ -11,6 +14,7 @@ import com.payments.orch.repo.PaymentRepo;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -40,6 +44,7 @@ class BillPayOrchestratorIdempotencyTest {
     @Mock private PaymentRepo paymentRepo;
     @Mock private OutboxRepo outboxRepo;
     @Mock private ObjectMapper objectMapper;
+    @Mock private CurrentUser currentUser;
 
     @InjectMocks private BillPayOrchestrator orchestrator;
 
@@ -53,6 +58,48 @@ class BillPayOrchestratorIdempotencyTest {
                 LocalDate.now().toString(),
                 new AmountDto(new BigDecimal("250.00"), "CAD"),
                 "test");
+    }
+
+    @Test
+    @DisplayName("the payment id is the hold id: release and capture depend on it")
+    void paymentIdIsTheHoldId() {
+        // StatusConsumer passes the payment id where Account Service expects a
+        // hold id, for both release and capture. Nothing enforces that beyond
+        // the line in acceptBillPay that takes one from the other, so it is
+        // asserted here: change either side and this fails rather than a
+        // payment silently failing to settle.
+        UUID holdId = UUID.randomUUID();
+        var request = request();
+
+        when(paymentRepo.findByIdempotencyKey(IDEM_KEY)).thenReturn(Optional.empty());
+        when(accounts.placeHold(any(), any(), any())).thenReturn(
+                new HoldResponse(holdId, new BigDecimal("250.00"), HoldStatus.ACTIVE, null, null));
+
+        var response = orchestrator.acceptBillPay(request, IDEM_KEY);
+
+        assertThat(response.paymentId())
+                .as("the payment must be identified by the hold placed for it")
+                .isEqualTo(holdId);
+
+        ArgumentCaptor<Payment> saved = ArgumentCaptor.forClass(Payment.class);
+        verify(paymentRepo).save(saved.capture());
+        assertThat(saved.getValue().getPaymentId()).isEqualTo(holdId);
+    }
+
+    @Test
+    @DisplayName("the customer who asked for the payment is recorded on it")
+    void recordsTheRequestingCustomer() {
+        // What makes the payment readable by its owner and nobody else.
+        when(paymentRepo.findByIdempotencyKey(IDEM_KEY)).thenReturn(Optional.empty());
+        when(currentUser.customerIdClaim()).thenReturn(Optional.of("cust-1"));
+        when(accounts.placeHold(any(), any(), any())).thenReturn(
+                new HoldResponse(UUID.randomUUID(), new BigDecimal("250.00"), HoldStatus.ACTIVE, null, null));
+
+        orchestrator.acceptBillPay(request(), IDEM_KEY);
+
+        ArgumentCaptor<Payment> saved = ArgumentCaptor.forClass(Payment.class);
+        verify(paymentRepo).save(saved.capture());
+        assertThat(saved.getValue().getCustomerId()).isEqualTo("cust-1");
     }
 
     @Test
