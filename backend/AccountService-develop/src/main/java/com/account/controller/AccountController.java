@@ -142,6 +142,27 @@ public class AccountController {
         return ResponseEntity.ok(resp);
     }
 
+    /**
+     * Takes the funds a hold reserved, in one step.
+     *
+     * <p>The caller sends no amount: it comes from the hold, so what is taken
+     * cannot differ from what was reserved. Used by the Payment Orchestrator
+     * when settlement confirms a payment, in place of releasing the hold and
+     * then debiting, which leaves the funds briefly spendable in between.</p>
+     */
+    @PostMapping("/accounts/{id}/holds/{holdId}/capture")
+    @PreAuthorize("hasAnyAuthority('SCOPE_fdx:accounts.write','SCOPE_admin:accounts')")
+    public ResponseEntity<HoldResponse> captureHold(
+            @PathVariable("id") UUID id,
+            @PathVariable("holdId") UUID holdId,
+            @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey) {
+
+        HoldResponse resp =
+                service.captureHold(id, holdId, "captured", idempotencyKey);
+
+        return ResponseEntity.ok(resp);
+    }
+
     /* ---------------- Postings ---------------- */
 
     @PostMapping("/accounts/{id}/credit")

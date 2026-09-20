@@ -21,6 +21,21 @@ import org.springframework.web.bind.annotation.*;
 public interface AccountM2MClient {
 
    
+	  /**
+	   * Takes the held funds in one step, instead of releasing the hold and then
+	   * debiting. Between those two calls the funds are spendable, and a debit
+	   * that then fails leaves the payment uncollectable with its hold gone.
+	   *
+	   * @param idempotencyKey derived from the payment id, so a redelivered
+	   *                       confirmation captures once
+	   */
+	  @PostMapping("/api/v1/accounts/{accountId}/holds/{holdId}/capture")
+	  HoldResponse captureHold(
+	      @PathVariable("accountId") UUID accountId,
+	      @PathVariable("holdId") UUID holdId,
+	      @RequestHeader(name = "Idempotency-Key") String idempotencyKey
+	  );
+
 	  @PostMapping("/api/v1/accounts/{accountId}/holds/{holdId}/release")
 	  HoldResponse releaseHold(
 	      @PathVariable("accountId") UUID accountId,

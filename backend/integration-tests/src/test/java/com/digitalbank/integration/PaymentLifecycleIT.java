@@ -153,9 +153,30 @@ class PaymentLifecycleIT {
         BigDecimal expected = OPENING_BALANCE.subtract(BILL_AMOUNT);
         assertThat(balance()).isEqualByComparingTo(expected);
         assertThat(availableBalance())
-                .as("the hold must be released, so available equals the balance")
+                .as("nothing is held any more, so available equals the balance")
                 .isEqualByComparingTo(expected);
         assertThat(activeHolds()).isZero();
+
+        // The held funds were taken in one operation rather than released and
+        // then debited, so the hold ends CAPTURED and the statement shows the
+        // single posting that moved the money.
+        assertThat(queryCount("accountsdb",
+                "select count(*) from account_hold where account_id = ? and status = 'CAPTURED'",
+                accountId))
+                .as("the hold must end captured, not released")
+                .isEqualTo(1);
+
+        assertThat(queryCount("accountsdb",
+                "select count(*) from account_transaction where request_fingerprint = ?",
+                paymentId + ":capture"))
+                .as("one ledger entry for the capture")
+                .isEqualTo(1);
+
+        assertThat(queryCount("accountsdb",
+                "select count(*) from account_transaction where account_id = ? and type = 'HOLD_RELEASED'",
+                accountId))
+                .as("a captured payment records no release")
+                .isZero();
     }
 
     @Test

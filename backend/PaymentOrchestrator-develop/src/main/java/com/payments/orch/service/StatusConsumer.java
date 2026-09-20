@@ -69,19 +69,22 @@ public class StatusConsumer {
     // catches a duplicate the orchestrator can see; this catches the one it
     // cannot, where the debit succeeded and the local transaction then rolled
     // back, leaving nothing here to show it had happened.
-    // One key per posting, not per payment: the release and the debit both
-    // land on the same account, and keys are unique per account, so a shared
-    // key would let the release claim it and the debit be skipped as already
-    // applied - taking no money at all.
+    // Keys are unique per account, so each posting needs its own: a shared key
+    // would let the first claim it and the second be skipped as already
+    // applied. Both are derived from the payment id, which is the same for
+    // every redelivery of this payment's confirmation.
+    String captureKey = p.getPaymentId() + ":capture";
     String releaseKey = p.getPaymentId() + ":release";
-    String debitKey = p.getPaymentId() + ":debit";
 
     if (target == PaymentState.POSTED) {
-    	PostingRequest r = new PostingRequest(p.getAmountValue(), p.getReason());
-    	accountM2MClient.releaseHold(p.getDebtorAccountId(), p.getPaymentId(), releaseKey);
-    	accountM2MClient.debit(p.getDebtorAccountId(), null, debitKey, r);
+    	// One call: the held funds become a debit without being released first.
+    	// Releasing and then debiting left them spendable in between, and a
+    	// debit that then failed for insufficient funds left the payment
+    	// uncollectable with its reservation already gone.
+    	accountM2MClient.captureHold(p.getDebtorAccountId(), p.getPaymentId(), captureKey);
     	p.setState(PaymentState.POSTED);
     } else {
+    	// Nothing is owed, so the reservation is simply given up.
     	accountM2MClient.releaseHold(p.getDebtorAccountId(), p.getPaymentId(), releaseKey);
       p.setState(PaymentState.FAILED);
     }
