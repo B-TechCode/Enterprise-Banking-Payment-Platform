@@ -88,3 +88,55 @@ jobs:
           name: surefire-reports
           path: backend/**/target/surefire-reports/
           retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # End-to-end tests: real Postgres, real Kafka, and five services running from
+  # the jars this build produced. They take minutes rather than seconds, so they
+  # do not run on every pull request.
+  #
+  #   - every push to main
+  #   - any pull request labelled run-integration
+  #
+  # Run them locally with:  mvn -DskipTests install && mvn -pl backend/integration-tests verify
+  # ---------------------------------------------------------------------------
+  integration-tests:
+    name: Integration tests
+    # Only worth starting if the code compiles and the unit tests pass.
+    needs: build-and-test
+    if: >-
+      github.event_name == 'push'
+      || contains(github.event.pull_request.labels.*.name, 'run-integration')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21 with Maven dependency cache
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # The tests start the services from these jars, so they must exist before
+      # the tests run. Tests are skipped here; the job above already ran them.
+      - name: Build the service jars
+        run: mvn -B -ntp -DskipTests install
+
+      - name: Run the integration tests
+        run: mvn -B -ntp -pl backend/integration-tests verify
+
+      - name: Publish integration results
+        if: always()
+        shell: bash
+        run: python3 .github/ci/integration-summary.py | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload failsafe reports and container logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failsafe-reports
+          path: backend/integration-tests/target/failsafe-reports/
+          retention-days: 7

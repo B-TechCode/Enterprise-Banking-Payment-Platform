@@ -1,0 +1,242 @@
+package com.digitalbank.integration;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
+
+import java.math.BigDecimal;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.time.Duration;
+import java.time.LocalDate;
+import java.util.TimeZone;
+import java.util.UUID;
+
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
+
+import com.fasterxml.jackson.databind.JsonNode;
+
+/**
+ * The bill payment lifecycle, end to end, through the real services.
+ *
+ * <p>A customer opens an account, funds it, registers a biller and pays a bill.
+ * The payment then travels the whole asynchronous path: funds are held, the
+ * outbox publishes the request, the worker batches it, settlement uploads the
+ * batch and reports it submitted, and the settlement confirmation debits the
+ * account and releases the hold. Every step happens in a separate service,
+ * over HTTP and Kafka, against a real database.</p>
+ *
+ * <p>Balances are asserted at the end because they are the part a customer
+ * would notice: the money must leave the account exactly once, and the hold
+ * that reserved it must be gone.</p>
+ */
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+class PaymentLifecycleIT {
+
+    private static final BigDecimal OPENING_BALANCE = new BigDecimal("500.00");
+    private static final BigDecimal BILL_AMOUNT = new BigDecimal("75.00");
+    private static final String IDEMPOTENCY_KEY = "integration-test-" + UUID.randomUUID();
+
+    private static PlatformStack stack;
+    private static String customerId;
+    private static String customerToken;
+
+    private static UUID accountId;
+    private static String billerReference;
+    private static UUID paymentId;
+
+    @BeforeAll
+    static void startPlatform() throws Exception {
+        // The JDBC driver sends this JVM's timezone when it connects, and
+        // Postgres rejects the "Asia/Calcutta" alias. The services force UTC in
+        // their own main() for the same reason; this test connects directly, so
+        // it has to do the same.
+        TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
+
+        stack = new PlatformStack();
+        stack.start();
+
+        customerId = "cust-" + UUID.randomUUID();
+        customerToken = stack.identity().userToken(
+                customerId, IdentityProviderStub.allUserScopes().toArray(String[]::new));
+    }
+
+    @AfterAll
+    static void stopPlatform() {
+        if (stack != null) {
+            stack.close();
+        }
+    }
+
+    private static String accounts() {
+        return stack.urlOf("account-service", 8084) + "/api/v1";
+    }
+
+    private static String billers() {
+        return stack.urlOf("biller-service", 8088) + "/api/v1";
+    }
+
+    private static String payments() {
+        return stack.urlOf("payment-orchestrator", 8086) + "/api/v1";
+    }
+
+    private static String worker() {
+        return stack.urlOf("billpay-worker-service", 8090) + "/api/mock/central1";
+    }
+
+    @Test
+    @Order(1)
+    @DisplayName("a bill payment reaches POSTED: funds held, batched, settled, debited, hold released")
+    void paymentLifecycle() {
+        // --- the customer registers a biller -------------------------------
+        billerReference = "HYDRO-" + UUID.randomUUID().toString().substring(0, 8);
+        JsonNode biller = Rest.post(billers() + "/billers", customerToken, """
+                {"name":"City Hydro","referenceNumber":"%s","category":"Electricity"}
+                """.formatted(billerReference)).require(201);
+        assertThat(biller.get("status").asText()).isEqualTo("ACTIVE");
+
+        // --- the customer opens an account and funds it ---------------------
+        JsonNode account = Rest.post(accounts() + "/accounts", customerToken, """
+                {"customerId":"%s","accountType":"CHEQUING","accountSubType":"PERSONAL",
+                 "status":"ACTIVE","currency":"CAD","nickname":"Everyday",
+                 "displayName":"Everyday Chequing","openingBalance":0}
+                """.formatted(customerId)).require(201);
+        accountId = UUID.fromString(account.get("id").asText());
+
+        // A posting is a created resource, so Account Service answers 201.
+        Rest.post(accounts() + "/accounts/" + accountId + "/credit", customerToken, """
+                {"amount":%s,"reason":"payday"}
+                """.formatted(OPENING_BALANCE)).require(201);
+
+        assertThat(balance()).isEqualByComparingTo(OPENING_BALANCE);
+
+        // --- the customer pays a bill --------------------------------------
+        JsonNode accepted = Rest.post(payments() + "/payments/billpay", customerToken, """
+                {"debtorAccountId":"%s","billerReferenceNumber":"%s","invoiceReference":"INV-001",
+                 "executionDate":"%s","amount":{"value":%s,"currency":"CAD"},"note":"hydro bill"}
+                """.formatted(accountId, billerReference, LocalDate.now(), BILL_AMOUNT),
+                "Idempotency-Key", IDEMPOTENCY_KEY).require(202);
+
+        paymentId = UUID.fromString(accepted.get("paymentId").asText());
+        assertThat(accepted.get("state").asText()).isEqualTo("FUNDS_HELD");
+
+        // The money is reserved but not yet taken.
+        assertThat(balance()).isEqualByComparingTo(OPENING_BALANCE);
+        assertThat(availableBalance()).isEqualByComparingTo(OPENING_BALANCE.subtract(BILL_AMOUNT));
+
+        // --- the platform batches and submits it on its own -----------------
+        // Outbox publishing, batching and settlement upload all happen
+        // asynchronously, so the test waits for the outcome rather than for
+        // any particular intermediate step.
+        await().atMost(Duration.ofMinutes(2)).pollInterval(Duration.ofSeconds(2))
+                .untilAsserted(() -> assertThat(paymentState()).isEqualTo("SUBMITTED"));
+
+        UUID batchId = batchId();
+        assertThat(batchId).as("the worker must have assigned a batch").isNotNull();
+
+        // --- the clearing system confirms the payment -----------------------
+        // The mock clearing system accepts the trigger and emits the file
+        // asynchronously, so it answers 202.
+        Rest.post(worker() + "/pain002/" + batchId, customerToken, "").require(202);
+
+        await().atMost(Duration.ofMinutes(2)).pollInterval(Duration.ofSeconds(2))
+                .untilAsserted(() -> assertThat(paymentState()).isEqualTo("POSTED"));
+
+        // --- the customer's money moved exactly once ------------------------
+        BigDecimal expected = OPENING_BALANCE.subtract(BILL_AMOUNT);
+        assertThat(balance()).isEqualByComparingTo(expected);
+        assertThat(availableBalance())
+                .as("the hold must be released, so available equals the balance")
+                .isEqualByComparingTo(expected);
+        assertThat(activeHolds()).isZero();
+    }
+
+    @Test
+    @Order(2)
+    @DisplayName("replaying the same payment request creates no second payment, hold or event")
+    void replayIsIdempotent() {
+        BigDecimal balanceBeforeReplay = balance();
+
+        JsonNode replay = Rest.post(payments() + "/payments/billpay", customerToken, """
+                {"debtorAccountId":"%s","billerReferenceNumber":"%s","invoiceReference":"INV-001",
+                 "executionDate":"%s","amount":{"value":%s,"currency":"CAD"},"note":"hydro bill"}
+                """.formatted(accountId, billerReference, LocalDate.now(), BILL_AMOUNT),
+                "Idempotency-Key", IDEMPOTENCY_KEY).require(202);
+
+        assertThat(UUID.fromString(replay.get("paymentId").asText()))
+                .as("the replay must return the original payment")
+                .isEqualTo(paymentId);
+
+        assertThat(countPayments()).as("no second payment row").isEqualTo(1);
+        assertThat(countOutboxEvents()).as("no second billpay.requested event").isEqualTo(1);
+        assertThat(countHolds()).as("no second hold on the account").isEqualTo(1);
+        assertThat(balance())
+                .as("a replay must not move money")
+                .isEqualByComparingTo(balanceBeforeReplay);
+    }
+
+    // ----------------------------------------------------------- queries
+
+    private String paymentState() {
+        return Rest.get(payments() + "/payments/" + paymentId, customerToken)
+                .require(200).get("state").asText();
+    }
+
+    private UUID batchId() {
+        JsonNode batch = Rest.get(payments() + "/payments/" + paymentId, customerToken)
+                .require(200).get("batchId");
+        return batch == null || batch.isNull() ? null : UUID.fromString(batch.asText());
+    }
+
+    private BigDecimal balance() {
+        return Rest.get(accounts() + "/accounts/" + accountId + "/balance", customerToken)
+                .require(200).get("balance").decimalValue();
+    }
+
+    private BigDecimal availableBalance() {
+        return Rest.get(accounts() + "/accounts/" + accountId + "/balance", customerToken)
+                .require(200).get("available").decimalValue();
+    }
+
+    private int activeHolds() {
+        return queryCount("accountsdb",
+                "select count(*) from account_hold where account_id = ? and status = 'ACTIVE'",
+                accountId);
+    }
+
+    private int countHolds() {
+        return queryCount("accountsdb", "select count(*) from account_hold where account_id = ?", accountId);
+    }
+
+    private int countPayments() {
+        return queryCount("paymentdb", "select count(*) from payments where idempotency_key = ?",
+                IDEMPOTENCY_KEY);
+    }
+
+    private int countOutboxEvents() {
+        return queryCount("paymentdb", "select count(*) from outbox where key = ? and topic = 'billpay.requested'",
+                paymentId);
+    }
+
+    private int queryCount(String database, String sql, Object parameter) {
+        try (Connection connection = DriverManager.getConnection(
+                stack.jdbcUrlFor(database), stack.dbUser(), stack.dbPassword());
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+
+            statement.setObject(1, parameter);
+            try (ResultSet rows = statement.executeQuery()) {
+                rows.next();
+                return rows.getInt(1);
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("query failed on " + database + ": " + sql, e);
+        }
+    }
+}

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -85,6 +85,12 @@
         <module>backend/commons-security-develop</module>
 
         <module>backend/commons-observability-develop</module>
+
+        <!--
+            Last on purpose: its tests run the services from the jars the
+            modules above produce, so those must be built first.
+        -->
+        <module>backend/integration-tests</module>
 
     </modules>
 
