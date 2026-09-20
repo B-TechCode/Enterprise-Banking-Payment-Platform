@@ -24,9 +24,11 @@ import com.account.mapper.TransactionMapper;
 import org.apache.commons.codec.digest.DigestUtils;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class AccountService {
 
 	private final AccountRepository accountRepo;
@@ -410,6 +412,71 @@ public class AccountService {
 		h = holdRepo.save(h);
 
 		emitTransaction(a, "HOLD_RELEASED", h.getAmount(), reason, true, a.getBalance(), idempotencyKey);
+
+		return new HoldResponse(h.getId(), h.getAmount(), h.getStatus(), h.getCreatedAt(), h.getReleaseAt());
+	}
+
+	/**
+	 * Takes the funds a hold reserved, in one step.
+	 *
+	 * <p>Replaces releasing a hold and then debiting the account. Between those
+	 * two calls the funds are no longer reserved: the customer can spend them,
+	 * the debit then fails for insufficient funds, and the payment can never be
+	 * collected even though the reservation is gone. Capturing moves the money
+	 * while it is still held, so that window does not exist.</p>
+	 *
+	 * <p>The amount comes from the hold, never from the caller, so what is taken
+	 * cannot disagree with what was reserved.</p>
+	 *
+	 * <p>The ledger records one posting, a DEBIT: from the customer's point of
+	 * view one thing happened, their bill was paid, and the hold mechanics
+	 * behind it are not separate events on a statement.</p>
+	 *
+	 * <p>A hold that is no longer ACTIVE is debited without being captured. That
+	 * is for the deployment in which this arrives: a payment already in flight
+	 * may have had its hold released by the previous code, and refusing it would
+	 * strand the payment. The debit carries the caller's key, so the money still
+	 * moves exactly once.</p>
+	 *
+	 * @param idempotencyKey stable across retries; a repeat takes nothing further
+	 */
+	@Transactional(propagation = Propagation.REQUIRED)
+	public HoldResponse captureHold(UUID accountId, UUID holdId, String reason, String idempotencyKey) {
+
+		AccountHold h = holdRepo.findById(holdId)
+				.orElseThrow(() -> new IllegalArgumentException("Hold not found"));
+
+		if (!h.getAccountId().equals(accountId)) {
+			throw new IllegalArgumentException("Hold does not belong to this account");
+		}
+
+		// Authorize before touching either the hold or the balance.
+		Account a = accountRepo.findById(accountId)
+				.orElseThrow(() -> new IllegalArgumentException("Account not found"));
+		ensureOwnerOrAdmin(a);
+
+		// A retry of a capture already applied changes nothing.
+		if (alreadyPosted(accountId, idempotencyKey) || h.getStatus() == HoldStatus.CAPTURED) {
+			return new HoldResponse(h.getId(), h.getAmount(), h.getStatus(), h.getCreatedAt(), h.getReleaseAt());
+		}
+
+		if (h.getStatus() == HoldStatus.ACTIVE) {
+			h.setStatus(HoldStatus.CAPTURED);
+			h.setReason(reason);
+			h = holdRepo.save(h);
+		} else {
+			log.warn("Capturing hold {} on account {} while it is {}: debiting without it. "
+					+ "Expected only for payments whose hold was released by an earlier release-then-debit.",
+					holdId, accountId, h.getStatus());
+		}
+
+		// The funds leave the account here. Taking the amount from the hold is
+		// what makes this exact: the reservation and the debit are the same
+		// number by construction.
+		a.setBalance(a.getBalance().subtract(h.getAmount()));
+		Account saved = accountRepo.saveAndFlush(a);
+
+		emitTransaction(saved, "DEBIT", h.getAmount(), reason, true, saved.getBalance(), idempotencyKey);
 
 		return new HoldResponse(h.getId(), h.getAmount(), h.getStatus(), h.getCreatedAt(), h.getReleaseAt());
 	}
