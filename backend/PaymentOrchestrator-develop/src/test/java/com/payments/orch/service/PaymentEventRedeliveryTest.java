@@ -22,6 +22,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -54,10 +55,12 @@ import com.payments.orch.repo.ProcessedEventRepo;
  * against the code before that rule; those in "existing protections" passed
  * before it and must keep passing.</p>
  *
- * <p>Not covered, because this change does not fix it: a debit that succeeds at
- * Account Service followed by a failed local commit. The remote debit cannot be
- * rolled back from here and the event is redelivered. That needs an idempotent
- * debit on the Account Service side and is tracked separately.</p>
+ * <p>The state guard cannot catch one case: a debit that succeeds at Account
+ * Service followed by a failed local commit, which leaves nothing here to show
+ * it happened. Each posting therefore also carries a key derived from the
+ * payment id, and Account Service applies a posting once per key
+ * (AccountPostingIdempotencyTest). The tests below check the keys are sent and
+ * stay the same across redeliveries.</p>
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -127,8 +130,8 @@ class PaymentEventRedeliveryTest {
     }
 
     private void verifyNoMoneyMoved() {
-        verify(accounts, never()).debit(any(), any(), any());
-        verify(accounts, never()).releaseHold(any(), any());
+        verify(accounts, never()).debit(any(), any(), any(), any());
+        verify(accounts, never()).releaseHold(any(), any(), any());
     }
 
     // ------------------------------------------------------ regressions
@@ -211,7 +214,7 @@ class PaymentEventRedeliveryTest {
             deliverSubmitted("sub-late");     // late batch event
             deliverStatus("POSTED");          // duplicate confirmation, new event id
 
-            verify(accounts, times(1)).debit(eq(accountId), any(), any());
+            verify(accounts, times(1)).debit(eq(accountId), any(), any(), any());
             assertThat(payment.getState()).isEqualTo(PaymentState.POSTED);
         }
     }
@@ -234,6 +237,50 @@ class PaymentEventRedeliveryTest {
         verify(processed).save(any());
     }
 
+    // ------------------------------------------- idempotency keys sent
+
+    /**
+     * The state guard above catches a duplicate this service can see. It cannot
+     * catch the case where the debit succeeded at Account Service and the local
+     * transaction then rolled back, because nothing here records that it
+     * happened. These keys are what make that case safe: Account Service
+     * recognises them and applies each posting once.
+     */
+    @Test
+    @DisplayName("the release and the debit each carry a key derived from the payment id")
+    void postingsCarryIdempotencyKeys() throws Exception {
+        deliverStatus("POSTED");
+
+        ArgumentCaptor<String> releaseKey = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<String> debitKey = ArgumentCaptor.forClass(String.class);
+        verify(accounts).releaseHold(eq(accountId), eq(paymentId), releaseKey.capture());
+        verify(accounts).debit(eq(accountId), any(), debitKey.capture(), any());
+
+        assertThat(releaseKey.getValue()).startsWith(paymentId.toString());
+        assertThat(debitKey.getValue()).startsWith(paymentId.toString());
+
+        // Keys are unique per account, so sharing one between the two postings
+        // would let the release claim it and the debit be skipped entirely.
+        assertThat(debitKey.getValue())
+                .as("the debit must not reuse the release's key")
+                .isNotEqualTo(releaseKey.getValue());
+    }
+
+    @Test
+    @DisplayName("the keys are the same on every redelivery of the same payment")
+    void keysAreStableAcrossRedeliveries() throws Exception {
+        deliverStatus("POSTED");
+        payment.setState(PaymentState.SUBMITTED);   // as if the local commit had rolled back
+        deliverStatus("POSTED");
+
+        ArgumentCaptor<String> debitKey = ArgumentCaptor.forClass(String.class);
+        verify(accounts, times(2)).debit(eq(accountId), any(), debitKey.capture(), any());
+
+        assertThat(debitKey.getAllValues())
+                .as("a redelivery must present the same key, or the money moves twice")
+                .containsExactly(debitKey.getAllValues().get(0), debitKey.getAllValues().get(0));
+    }
+
     // ----------------------------------------------- existing protections
 
     @Nested
@@ -247,9 +294,9 @@ class PaymentEventRedeliveryTest {
             deliverStatus("POSTED");
 
             InOrder order = inOrder(accounts);
-            order.verify(accounts).releaseHold(accountId, paymentId);
-            order.verify(accounts).debit(eq(accountId), any(), any());
-            verify(accounts, times(1)).debit(any(), any(), any());
+            order.verify(accounts).releaseHold(eq(accountId), eq(paymentId), any());
+            order.verify(accounts).debit(eq(accountId), any(), any(), any());
+            verify(accounts, times(1)).debit(any(), any(), any(), any());
             assertThat(payment.getState()).isEqualTo(PaymentState.POSTED);
         }
 
@@ -258,8 +305,8 @@ class PaymentEventRedeliveryTest {
         void failedReleasesWithoutDebit() throws Exception {
             deliverStatus("FAILED");
 
-            verify(accounts).releaseHold(accountId, paymentId);
-            verify(accounts, never()).debit(any(), any(), any());
+            verify(accounts).releaseHold(eq(accountId), eq(paymentId), any());
+            verify(accounts, never()).debit(any(), any(), any(), any());
             assertThat(payment.getState()).isEqualTo(PaymentState.FAILED);
         }
 

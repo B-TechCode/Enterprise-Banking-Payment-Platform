@@ -182,6 +182,53 @@ class PaymentLifecycleIT {
                 .isEqualByComparingTo(balanceBeforeReplay);
     }
 
+    @Test
+    @Order(3)
+    @DisplayName("a debit repeated under the same key takes the money once")
+    void debitIsIdempotent() {
+        // What a redelivered settlement confirmation looks like to Account
+        // Service: the same posting, asked for twice. The orchestrator's own
+        // guard cannot help when its first attempt debited and then failed to
+        // commit, so this must hold on the Account Service side.
+        BigDecimal before = balance();
+        String key = "integration-debit-" + UUID.randomUUID();
+        String body = """
+                {"amount":10.00,"reason":"redelivered settlement"}
+                """;
+
+        Rest.post(accounts() + "/accounts/" + accountId + "/debit", customerToken, body,
+                "Idempotency-Key", key).require(201);
+        Rest.post(accounts() + "/accounts/" + accountId + "/debit", customerToken, body,
+                "Idempotency-Key", key).require(201);
+
+        assertThat(balance())
+                .as("the second request must take nothing")
+                .isEqualByComparingTo(before.subtract(new BigDecimal("10.00")));
+
+        assertThat(queryCount("accountsdb",
+                "select count(*) from account_transaction where request_fingerprint = ?", key))
+                .as("and must leave a single ledger entry")
+                .isEqualTo(1);
+    }
+
+    @Test
+    @Order(4)
+    @DisplayName("the database enforces one posting per key, not just the application")
+    void uniqueConstraintExists() {
+        // The application check is a fast path; this constraint is what makes
+        // two concurrent retries safe. It is declared on the entity, but
+        // ddl-auto: update does not reliably add a constraint to a table that
+        // already exists, so it is worth confirming it is really there.
+        int constraints = queryCount("accountsdb", """
+                select count(*) from pg_constraint
+                where conname = ? and contype = 'u'
+                """, "uk_tx_account_idem");
+
+        assertThat(constraints)
+                .as("uk_tx_account_idem must exist on account_transaction")
+                .isEqualTo(1);
+    }
+
     // ----------------------------------------------------------- queries
 
     private String paymentState() {

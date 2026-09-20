@@ -63,13 +63,26 @@ public class StatusConsumer {
       return;
     }
 
+    // The payment id keys both calls: it is the same for every redelivery of
+    // this payment's confirmation, and unique to the payment. Account Service
+    // applies each posting once, however often this runs. The guard above
+    // catches a duplicate the orchestrator can see; this catches the one it
+    // cannot, where the debit succeeded and the local transaction then rolled
+    // back, leaving nothing here to show it had happened.
+    // One key per posting, not per payment: the release and the debit both
+    // land on the same account, and keys are unique per account, so a shared
+    // key would let the release claim it and the debit be skipped as already
+    // applied - taking no money at all.
+    String releaseKey = p.getPaymentId() + ":release";
+    String debitKey = p.getPaymentId() + ":debit";
+
     if (target == PaymentState.POSTED) {
     	PostingRequest r = new PostingRequest(p.getAmountValue(), p.getReason());
-    	accountM2MClient.releaseHold(p.getDebtorAccountId(), p.getPaymentId());
-    	accountM2MClient.debit(p.getDebtorAccountId(),null, r);
+    	accountM2MClient.releaseHold(p.getDebtorAccountId(), p.getPaymentId(), releaseKey);
+    	accountM2MClient.debit(p.getDebtorAccountId(), null, debitKey, r);
     	p.setState(PaymentState.POSTED);
     } else {
-    	accountM2MClient.releaseHold(p.getDebtorAccountId(), p.getPaymentId());
+    	accountM2MClient.releaseHold(p.getDebtorAccountId(), p.getPaymentId(), releaseKey);
       p.setState(PaymentState.FAILED);
     }
    // p.setExternalStatusCode(evt.status());

@@ -72,6 +72,17 @@ public class TransactionService {
 	                .orElseThrow(() -> new ResourceNotFoundException("Transaction not found for id: " + transactionId));
 	    }
 
+	    /**
+	     * An earlier posting on this account recorded under the same key.
+	     *
+	     * <p>Scoped to the account, matching the unique constraint
+	     * uk_tx_account_idem, so one customer's key can never match another's
+	     * posting.</p>
+	     */
+	    public Optional<Transaction> findByAccountAndFingerprint(UUID accountId, String fingerprint) {
+	    	return transactionRepository.findByAccountIdAndRequestFingerprint(accountId, fingerprint);
+	    }
+
 	    public Transaction save(Transaction tx) {
 	    	// If caller populated requestFingerprint, dedupe on it	
 	    	if (tx.getRequestFingerprint() != null && !tx.getRequestFingerprint().isBlank()) {
