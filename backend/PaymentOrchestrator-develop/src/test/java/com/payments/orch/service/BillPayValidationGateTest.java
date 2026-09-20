@@ -30,6 +30,7 @@ import org.mockito.quality.Strictness;
 
 import com.account.dto.HoldResponse;
 import com.account.dto.HoldStatus;
+import com.commons.security.CurrentUser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.payments.orch.client.AccountClient;
 import com.payments.orch.client.BillerRegistryClient;
@@ -63,13 +64,15 @@ class BillPayValidationGateTest {
     @Mock private PaymentRepo paymentRepo;
     @Mock private OutboxRepo outboxRepo;
     @Mock private ObjectMapper objectMapper;
+    @Mock private CurrentUser currentUser;
 
     private BillPayOrchestrator orchestrator;
 
     @BeforeEach
     void setUp() {
         orchestrator = new BillPayOrchestrator(
-                new BillPayValidator(registry), accounts, paymentRepo, outboxRepo, objectMapper);
+                new BillPayValidator(registry), accounts, paymentRepo, outboxRepo, objectMapper,
+                currentUser);
 
         when(paymentRepo.findByIdempotencyKey(anyString())).thenReturn(Optional.empty());
         when(registry.isActive(BILLER)).thenReturn(true);

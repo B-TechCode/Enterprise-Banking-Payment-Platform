@@ -60,6 +60,19 @@ public class Payment {
   @Column(name="idempotency_key", length=80, nullable=false)
   private String idempotencyKey; // Prevents duplicate intents for >= 24h
 
+  /**
+   * The customer who asked for this payment, taken from their token when it was
+   * accepted. It is what makes a payment readable by its owner and nobody else:
+   * without it the only identity on the row is the debtor account, and
+   * answering "may this caller see this payment?" would mean asking Account
+   * Service on every poll.
+   *
+   * <p>Null on payments accepted before this column existed. Those fall back to
+   * asking Account Service for the account's owner, so they stay readable.</p>
+   */
+  @Column(name="customer_id", length=64)
+  private String customerId;
+
   
   @Column(name="created_at", nullable=false)
   private OffsetDateTime createdAt;

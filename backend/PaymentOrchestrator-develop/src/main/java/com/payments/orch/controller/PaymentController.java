@@ -5,6 +5,7 @@ import com.payments.orch.dto.PaymentAcceptedResponse;
 import com.payments.orch.service.BillPayOrchestrator;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -12,31 +13,21 @@ import java.net.URI;
 import java.util.UUID;
 
 /*
- * SECURITY FINDING - OPEN, deliberately not fixed yet (found during AI agent Slice 3).
+ * These endpoints are reachable from outside: the API gateway routes
+ * /payments/** here, so POST /payments/payments/billpay is a public entry
+ * point to moving money.
  *
- * No endpoint in this controller carries @PreAuthorize, and this module defines
- * no scope rules of its own. The only control applied is the shared
- * commons-security chain (DefaultSecurityConfig), which requires an
- * authenticated JWT and nothing more.
+ * They once carried no authorization of their own. The only control was the
+ * shared commons-security chain, which requires a valid JWT and nothing more,
+ * so any authenticated token reached them, and GET returned any payment to any
+ * caller. Each endpoint now states the scope it needs, and a payment is
+ * readable only by the customer who asked for it.
  *
- * Consequence: any valid token - including a client-credentials token, or a user
- * token that lacks fdx:bill.write - can initiate a bill payment. The API gateway
- * routes /payments/** here, so this is reachable externally as
- * POST /payments/payments/billpay.
- *
- * This also means the AI agent's confirm endpoint
- * (POST /api/v1/agent/payments/{id}/confirm, which requires
- * SCOPE_fdx:bill.write plus proposal ownership and lifecycle checks) is not the
- * only route to a bill payment: a caller can skip it and come here directly.
- * The agent's own invariant - model output can never reach this API - is
- * unaffected; the gap is in platform authorization, not in the agent.
- *
- * Not verified: whether BillPayOrchestrator checks that debtorAccountId belongs
- * to the caller. If it does not, this is also an IDOR on the debtor account,
- * the same defect class fixed in Account Service in commit 6feb81e.
- *
- * Suggested fix: @PreAuthorize("hasAuthority('SCOPE_fdx:bill.write')") on
- * billPay, and on get() at least a read scope plus an ownership check.
+ * Which account may be paid from is decided further in rather than here: the
+ * hold is placed with the caller's own token, and Account Service refuses an
+ * account they do not own. PaymentAuthorizationWiringTest keeps that call on
+ * the relaying client, because making it with the service token would remove
+ * that check.
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -45,7 +36,16 @@ public class PaymentController {
 
   private final BillPayOrchestrator billPayOrchestrator;
 
+  /**
+   * Initiates a bill payment.
+   *
+   * <p>The scope is what stops any authenticated token from reaching this at
+   * all. Which account may be paid from is decided further in: the hold is
+   * placed with the caller's own token and Account Service refuses an account
+   * they do not own.</p>
+   */
   @PostMapping("/payments/billpay")
+  @PreAuthorize("hasAuthority('SCOPE_fdx:bill.write')")
   public ResponseEntity<PaymentAcceptedResponse> billPay(
       @RequestHeader("Idempotency-Key") String idempotencyKey,
       @Valid @RequestBody BillPayRequest req
@@ -55,7 +55,13 @@ public class PaymentController {
     return ResponseEntity.accepted().location(location).body(res);
   }
 
+  /**
+   * A payment, readable by the customer who asked for it. Someone else's
+   * payment is reported as missing rather than refused, so this cannot be used
+   * to discover which payment ids exist.
+   */
   @GetMapping("/payments/{paymentId}")
+  @PreAuthorize("hasAuthority('SCOPE_fdx:bill.read')")
   public ResponseEntity<?> get(@PathVariable UUID paymentId) {
     return ResponseEntity.ok(billPayOrchestrator.view(paymentId));
   }
