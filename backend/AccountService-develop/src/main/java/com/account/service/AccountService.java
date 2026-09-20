@@ -358,7 +358,15 @@ public class AccountService {
 
 		String fp = (r.idempotencyKey() != null && !r.idempotencyKey().isBlank()) ? r.idempotencyKey().trim() : null;
 		if (fp != null) {
-			Optional<AccountHold> ex = holdRepo.findByRequestFingerprint(fp);
+			// Scoped to this account: an unscoped lookup returned whichever hold
+			// carried the key, so a caller reusing another customer's key was
+			// handed that customer's hold id and amount.
+			//
+			// The column's unique constraint is still global, so a key that
+			// another account already used now fails the write rather than
+			// leaking. Making the constraint per-account needs a migration and
+			// is tracked separately.
+			Optional<AccountHold> ex = holdRepo.findByAccountIdAndRequestFingerprint(accountId, fp);
 			if (ex.isPresent()) {
 				AccountHold h = ex.get();
 				return new HoldResponse(h.getId(), h.getAmount(), h.getStatus(), h.getCreatedAt(), h.getReleaseAt());

@@ -250,6 +250,65 @@ class PaymentLifecycleIT {
                 .isEqualTo(1);
     }
 
+    @Test
+    @Order(5)
+    @DisplayName("another customer cannot read this payment, and is told it does not exist")
+    void anotherCustomerCannotReadThePayment() {
+        // Same scopes, different customer: the only thing separating them is
+        // ownership of the payment.
+        String intruderToken = stack.identity().userToken(
+                "cust-" + UUID.randomUUID(), IdentityProviderStub.allUserScopes().toArray(String[]::new));
+
+        var response = Rest.get(payments() + "/payments/" + paymentId, intruderToken);
+
+        assertThat(response.status())
+                .as("a refusal would confirm the id exists; missing gives nothing away")
+                .isEqualTo(404);
+
+        // The owner still reads it, so the endpoint is not simply broken.
+        assertThat(Rest.get(payments() + "/payments/" + paymentId, customerToken).status())
+                .isEqualTo(200);
+    }
+
+    @Test
+    @Order(6)
+    @DisplayName("initiating a payment without the bill-write scope is refused")
+    void billPayRequiresTheBillWriteScope() {
+        // A valid token for this same customer, carrying every other scope.
+        String weakToken = stack.identity().userToken(customerId,
+                "fdx:accounts.read", "fdx:accounts.write", "fdx:bill.read");
+
+        var response = Rest.post(payments() + "/payments/billpay", weakToken, """
+                {"debtorAccountId":"%s","billerReferenceNumber":"%s","invoiceReference":"INV-002",
+                 "executionDate":"%s","amount":{"value":5.00,"currency":"CAD"},"note":"no scope"}
+                """.formatted(accountId, billerReference, LocalDate.now()),
+                "Idempotency-Key", "integration-noscope-" + UUID.randomUUID());
+
+        assertThat(response.status())
+                .as("the scope is what stops any authenticated token reaching this")
+                .isEqualTo(403);
+    }
+
+    @Test
+    @Order(7)
+    @DisplayName("the payment records the customer who asked for it")
+    void paymentRecordsItsCustomer() {
+        // The column ownership checks read. ddl-auto: update adds it, but that
+        // is worth confirming rather than assuming.
+        assertThat(queryCount("paymentdb", """
+                select count(*) from information_schema.columns
+                where table_name = 'payments' and column_name = ?
+                """, "customer_id"))
+                .as("payments.customer_id must exist")
+                .isEqualTo(1);
+
+        assertThat(queryCount("paymentdb",
+                "select count(*) from payments where payment_id = ? and customer_id = '" + customerId + "'",
+                paymentId))
+                .as("and must hold the customer who made this payment")
+                .isEqualTo(1);
+    }
+
     // ----------------------------------------------------------- queries
 
     private String paymentState() {

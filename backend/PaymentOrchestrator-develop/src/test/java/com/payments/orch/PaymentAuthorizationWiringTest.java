@@ -12,9 +12,14 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import java.util.UUID;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.cloud.openfeign.FeignClient;
+import org.springframework.security.access.prepost.PreAuthorize;
+
+import com.payments.orch.dto.BillPayRequest;
 
 import com.payments.orch.client.AccountClient;
 import com.payments.orch.client.AccountM2MClient;
@@ -86,6 +91,31 @@ class PaymentAuthorizationWiringTest {
 
         assertThat(clients).contains(AccountM2MClient.class);
         assertThat(usesM2mToken(AccountM2MClient.class)).isTrue();
+    }
+
+    @Test
+    @DisplayName("both payment endpoints require a scope")
+    void paymentEndpointsRequireScopes() throws Exception {
+        // Without these, any authenticated token reaches these endpoints,
+        // including one holding no banking scopes at all. Which account may be
+        // paid from is decided further in, when the hold is placed with the
+        // caller's own token.
+        assertThat(scopeRequiredBy("billPay", String.class, BillPayRequest.class))
+                .isEqualTo("hasAuthority('SCOPE_fdx:bill.write')");
+
+        assertThat(scopeRequiredBy("get", UUID.class))
+                .isEqualTo("hasAuthority('SCOPE_fdx:bill.read')");
+    }
+
+    private static String scopeRequiredBy(String method, Class<?>... parameters) throws Exception {
+        PreAuthorize annotation = PaymentController.class
+                .getMethod(method, parameters)
+                .getAnnotation(PreAuthorize.class);
+
+        assertThat(annotation)
+                .as("%s must carry a @PreAuthorize", method)
+                .isNotNull();
+        return annotation.value();
     }
 
     // ------------------------------------------------------------ helpers
