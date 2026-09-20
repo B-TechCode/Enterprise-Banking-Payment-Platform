@@ -24,14 +24,23 @@ public interface AccountM2MClient {
 	  @PostMapping("/api/v1/accounts/{accountId}/holds/{holdId}/release")
 	  HoldResponse releaseHold(
 	      @PathVariable("accountId") UUID accountId,
-	      @PathVariable("holdId") UUID holdId
+	      @PathVariable("holdId") UUID holdId,
+	      @RequestHeader(name = "Idempotency-Key") String idempotencyKey
 	  );
     
     
+	  /**
+	   * @param idempotencyKey the payment id. Settlement confirmations arrive at
+	   *                       least once and a local failure after this call can
+	   *                       roll back everything except the debit itself, so
+	   *                       the key is what stops the customer being charged
+	   *                       twice.
+	   */
 	  @PostMapping("/api/v1/accounts/{id}/debit")
 	  AccountResponse debit(
 	      @PathVariable("id") UUID id,
 	      @RequestHeader(name = "If-Match", required = false) String ifMatch,
+	      @RequestHeader(name = "Idempotency-Key") String idempotencyKey,
 	      @Valid @RequestBody PostingRequest request
 	  );
 }
