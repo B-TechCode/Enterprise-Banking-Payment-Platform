@@ -9,6 +9,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    # opened, synchronize and reopened are the defaults. labeled is added so
+    # that applying the run-integration label re-evaluates the workflow and
+    # starts the integration job; without it, labelling a pull request starts
+    # no run at all and the job below is simply never reconsidered.
+    types: [opened, synchronize, reopened, labeled]
 
 # A newer push to the same branch or PR cancels the run it supersedes.
 concurrency:
