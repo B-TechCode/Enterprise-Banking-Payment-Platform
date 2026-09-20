@@ -133,10 +133,11 @@ public class AccountController {
     @PreAuthorize("hasAnyAuthority('SCOPE_fdx:accounts.write','SCOPE_admin:accounts')")
     public ResponseEntity<HoldResponse> releaseHold(
             @PathVariable("id") UUID id,
-            @PathVariable("holdId") UUID holdId) {
+            @PathVariable("holdId") UUID holdId,
+            @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey) {
 
         HoldResponse resp =
-                service.releaseHold(id, holdId, "manual_release");
+                service.releaseHold(id, holdId, "manual_release", idempotencyKey);
 
         return ResponseEntity.ok(resp);
     }
@@ -148,12 +149,15 @@ public class AccountController {
     public ResponseEntity<AccountResponse> credit(
             @PathVariable("id") UUID id,
             @RequestHeader(name = "If-Match", required = false) String ifMatch,
+            // A client that retries after a timeout sends the same key, and the
+            // posting is applied once.
+            @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody PostingRequest request) {
 
         Integer expected = parseIfMatch(ifMatch);
 
         AccountResponse r =
-                service.credit(id, request, expected);
+                service.credit(id, request, expected, idempotencyKey);
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .eTag('"' + String.valueOf(r.version()) + '"')
@@ -165,12 +169,15 @@ public class AccountController {
     public ResponseEntity<AccountResponse> debit(
             @PathVariable("id") UUID id,
             @RequestHeader(name = "If-Match", required = false) String ifMatch,
+            // The Payment Orchestrator sends the payment id here, so a
+            // settlement confirmation processed twice takes the money once.
+            @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey,
             @Valid @RequestBody PostingRequest request) {
 
         Integer expected = parseIfMatch(ifMatch);
 
         AccountResponse r =
-                service.debit(id, request, expected);
+                service.debit(id, request, expected, idempotencyKey);
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .eTag('"' + String.valueOf(r.version()) + '"')

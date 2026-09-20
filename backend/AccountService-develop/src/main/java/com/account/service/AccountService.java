@@ -141,8 +141,53 @@ public class AccountService {
 		throw new OwnerAccessDeniedException();
 	}
 
+	/**
+	 * Whether this posting has already been applied to this account.
+	 *
+	 * <p>Callers that may retry - a Kafka consumer redelivering an event, a
+	 * client resending after a timeout - pass a key that is stable across those
+	 * retries. The first posting records it as the transaction's fingerprint, so
+	 * a repeat is recognised here and changes nothing.</p>
+	 *
+	 * <p>This check guards the balance, not the ledger. TransactionService.save
+	 * already returns an existing transaction for a repeated fingerprint, so
+	 * without this the balance would move twice while only one transaction was
+	 * recorded, and the ledger would no longer explain the balance.</p>
+	 *
+	 * <p>It is a fast path rather than the guarantee. Two concurrent retries can
+	 * both pass it; the unique constraint on (accountId, requestFingerprint)
+	 * then fails the second, and because the transaction is written in the same
+	 * database transaction as the balance, that debit or credit rolls back
+	 * with it.</p>
+	 */
+	private boolean alreadyPosted(UUID accountId, String idempotencyKey) {
+		if (idempotencyKey == null || idempotencyKey.isBlank()) {
+			return false;
+		}
+		return transactionService.findByAccountAndFingerprint(accountId, idempotencyKey.trim()).isPresent();
+	}
+
+	/** The caller's key when it supplied one; otherwise the legacy time-based fingerprint. */
+	private static String fingerprintFor(String idempotencyKey, Account acc, String type, BigDecimal amount,
+			String reason, OffsetDateTime occurredAt) {
+
+		if (idempotencyKey != null && !idempotencyKey.isBlank()) {
+			return idempotencyKey.trim();
+		}
+
+		// Includes the timestamp, so it is unique per call: a posting made
+		// without a key is applied every time it is asked for, as before.
+		return DigestUtils.sha256Hex(
+				acc.getId().toString() + type + amount.toPlainString() + reason + occurredAt.toString());
+	}
+
 	private void emitTransaction(Account acc, String type, BigDecimal amount, String reason, boolean posting,
 			BigDecimal balanceAfterOrNull) {
+		emitTransaction(acc, type, amount, reason, posting, balanceAfterOrNull, null);
+	}
+
+	private void emitTransaction(Account acc, String type, BigDecimal amount, String reason, boolean posting,
+			BigDecimal balanceAfterOrNull, String idempotencyKey) {
 
 		String currency = acc.getCurrency();
 
@@ -159,9 +204,8 @@ public class AccountService {
 // Map to JPA entity
 		Transaction tx = transactionMapper.toEntity(req);
 
-		String fingerprint = DigestUtils.sha256Hex(
-				acc.getId().toString() + type + amount.toPlainString() + reason + req.occurredAt().toString());
-		tx.setRequestFingerprint(fingerprint);
+		tx.setRequestFingerprint(
+				fingerprintFor(idempotencyKey, acc, type, amount, reason, req.occurredAt()));
 
 // Persist using same DB + same Spring transaction
 		transactionService.save(tx);
@@ -243,8 +287,19 @@ public class AccountService {
 
 	@Transactional(propagation = Propagation.REQUIRED)
 	public AccountResponse credit(UUID id, PostingRequest r, Integer expectedVersion) {
+		return credit(id, r, expectedVersion, null);
+	}
+
+	@Transactional(propagation = Propagation.REQUIRED)
+	public AccountResponse credit(UUID id, PostingRequest r, Integer expectedVersion, String idempotencyKey) {
 		Account a = accountRepo.findById(id).orElseThrow(() -> new IllegalArgumentException("Account not found"));
 		ensureOwnerOrAdmin(a);
+
+		// A repeat of a posting already applied changes nothing and reports the
+		// account as it stands.
+		if (alreadyPosted(id, idempotencyKey)) {
+			return mapper.toDto(a);
+		}
 
 		if (expectedVersion != null && !expectedVersion.equals(a.getVersion())) {
 			throw new IllegalStateException("ETag mismatch");
@@ -253,17 +308,32 @@ public class AccountService {
 
 		Account saved = accountRepo.saveAndFlush(a);
 
-		emitTransaction(saved, "CREDIT", r.amount(), r.reason(), true, saved.getBalance());
+		emitTransaction(saved, "CREDIT", r.amount(), r.reason(), true, saved.getBalance(), idempotencyKey);
 		return mapper.toDto(saved);
 	}
 
 	@Transactional(propagation = Propagation.REQUIRED)
 	public AccountResponse debit(UUID id, PostingRequest r, Integer expectedVersion) {
+		return debit(id, r, expectedVersion, null);
+	}
+
+	/**
+	 * @param idempotencyKey stable across retries of the same posting; a repeat
+	 *                       takes no money and returns the account unchanged
+	 */
+	@Transactional(propagation = Propagation.REQUIRED)
+	public AccountResponse debit(UUID id, PostingRequest r, Integer expectedVersion, String idempotencyKey) {
 		Account a = accountRepo.findById(id).orElseThrow(() -> new IllegalArgumentException("Account not found"));
 		if (expectedVersion != null && !expectedVersion.equals(a.getVersion())) {
 			throw new IllegalStateException("ETag mismatch");
 		}
 		ensureOwnerOrAdmin(a);
+
+		// The Payment Orchestrator debits with the payment id as its key, so a
+		// settlement confirmation processed twice takes the money once.
+		if (alreadyPosted(id, idempotencyKey)) {
+			return mapper.toDto(a);
+		}
 
 		BigDecimal holds = activeHoldsTotal(id);
 		BigDecimal available = a.getBalance().subtract(holds);
@@ -274,7 +344,7 @@ public class AccountService {
 
 		Account saved = accountRepo.saveAndFlush(a);
 
-		emitTransaction(saved, "DEBIT", r.amount(), r.reason(), true, saved.getBalance());
+		emitTransaction(saved, "DEBIT", r.amount(), r.reason(), true, saved.getBalance(), idempotencyKey);
 		return mapper.toDto(saved);
 	}
 
@@ -310,6 +380,16 @@ public class AccountService {
 
 	@Transactional(propagation = Propagation.REQUIRED)
 	public HoldResponse releaseHold(UUID accountId, UUID holdId, String reason) {
+		return releaseHold(accountId, holdId, reason, null);
+	}
+
+	/**
+	 * Releasing is already safe to repeat: a hold that is no longer ACTIVE is
+	 * returned untouched below. The key only gives the ledger entry a stable
+	 * fingerprint, so a retry cannot record a second HOLD_RELEASED posting.
+	 */
+	@Transactional(propagation = Propagation.REQUIRED)
+	public HoldResponse releaseHold(UUID accountId, UUID holdId, String reason, String idempotencyKey) {
 		AccountHold h = holdRepo.findById(holdId).orElseThrow(() -> new IllegalArgumentException("Hold not found"));
 		if (!h.getAccountId().equals(accountId)) {
 			throw new IllegalArgumentException("Hold does not belong to this account");
@@ -329,7 +409,7 @@ public class AccountService {
 		h.setReason(reason);
 		h = holdRepo.save(h);
 
-		emitTransaction(a, "HOLD_RELEASED", h.getAmount(), reason, true, a.getBalance());
+		emitTransaction(a, "HOLD_RELEASED", h.getAmount(), reason, true, a.getBalance(), idempotencyKey);
 
 		return new HoldResponse(h.getId(), h.getAmount(), h.getStatus(), h.getCreatedAt(), h.getReleaseAt());
 	}
