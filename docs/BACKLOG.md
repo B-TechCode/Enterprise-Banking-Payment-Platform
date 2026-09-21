@@ -5,9 +5,10 @@ was deferred, and what unblocks it. This is a to-do list, not a place to hide
 things: an item leaves this file when it is fixed, not when it stops being
 convenient.
 
-Priorities are relative to each other, not absolute. Nothing here is a live
-exploit — the items marked security are weaknesses behind an existing control,
-recorded so the control is not mistaken for the whole defence.
+Priorities are relative to each other, not absolute. The items marked security
+are weaknesses behind an existing control, recorded so the control is not
+mistaken for the whole defence — except item 7, which has not been triaged and
+may not have a control in front of it at all.
 
 | # | Item | Category | Priority | Blocked on |
 |---|------|----------|----------|------------|
@@ -17,6 +18,7 @@ recorded so the control is not mistaken for the whole defence.
 | 4 | AICommerceAgent is absent from the integration stack | Test coverage | Medium | Dummy `GEMINI_API_KEY` in the stack |
 | 5 | Downstream status decoder is duplicated in two services | Housekeeping | Low | A third service needing it |
 | 6 | CI actions on v4, already force-run on Node 24; runner is `ubuntu-latest` | Housekeeping | Low | Nothing — do it before 19 Oct 2026 |
+| 7 | An account owner may be able to credit their own account | Security (unverified) | Untriaged | Triage: is this by design? |
 
 ---
 
@@ -125,3 +127,26 @@ Two small things in [`ci.yml`](../.github/workflows/ci.yml):
 - Both jobs run on `ubuntu-latest`, which migrates to Ubuntu 26.04 on
   **19 October 2026**. Pin `ubuntu-24.04` before then so the migration is a change
   we make deliberately rather than one that arrives as a mystery red build.
+
+## 7. Self-service credit
+
+**Security (unverified) · Untriaged · needs triage before anything else**
+
+`POST /accounts/{id}/credit` requires `SCOPE_fdx:accounts.write`, and
+`AccountService.credit` runs the same `ensureOwnerOrAdmin` check as every other
+account operation, which lets an account's **owner** through. Read together,
+that suggests a customer holding that scope can credit their own account with
+any amount: money created from nothing.
+
+This has not been investigated. It was noticed in passing on 21 Sep 2026 while
+tracing the transaction dedupe fix, and is recorded so it is not lost. It may
+well be intended — a mock bank needs some way to fund accounts — and whether it
+is reachable at all depends on which tokens are issued `fdx:accounts.write`,
+which is Auth0 configuration rather than anything in this repository.
+
+Triage should answer, in order:
+
+1. Is customer self-credit intended? If it is, say so here and close the item.
+2. If not, do end-user tokens carry `fdx:accounts.write`? That decides whether
+   it is reachable today or only one configuration change away.
+3. If it is reachable, it outranks everything else in this file.
