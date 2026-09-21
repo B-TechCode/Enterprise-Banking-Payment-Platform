@@ -16,7 +16,7 @@ recorded so the control is not mistaken for the whole defence.
 | 3 | Orchestrator validator is CAD-only; the agent stages any currency | Correctness | Medium | Product decision |
 | 4 | AICommerceAgent is absent from the integration stack | Test coverage | Medium | Dummy `GEMINI_API_KEY` in the stack |
 | 5 | Downstream status decoder is duplicated in two services | Housekeeping | Low | A third service needing it |
-| 6 | CI actions on v4; runner is `ubuntu-latest` | Housekeeping | Low | Nothing — do it before 19 Oct 2026 |
+| 6 | CI actions on v4, already force-run on Node 24; runner is `ubuntu-latest` | Housekeeping | Low | Nothing — do it before 19 Oct 2026 |
 
 ---
 
@@ -115,7 +115,13 @@ into, not an auto-registered bean — when a third service needs it.
 Two small things in [`ci.yml`](../.github/workflows/ci.yml):
 
 - `actions/checkout`, `actions/setup-java` and `actions/upload-artifact` are all on
-  v4. v5 is current; the upgrade is mechanical.
+  v4, which targets Node 20. This is past the warning stage: as of CI run #25
+  (20 Sep 2026) GitHub annotates every run to say it is *forcing* checkout and
+  setup-java to run on Node 24 instead, and that setup-java v4 will receive no
+  further updates. The jobs still pass, but they now run on a runtime the actions
+  were not released against, with no fixes coming if that breaks. The upgrade to
+  v5 is mechanical; the point is to make it before a runner change makes it
+  urgent.
 - Both jobs run on `ubuntu-latest`, which migrates to Ubuntu 26.04 on
   **19 October 2026**. Pin `ubuntu-24.04` before then so the migration is a change
   we make deliberately rather than one that arrives as a mystery red build.
