@@ -29,8 +29,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long> 
 
     long countByAccountIdAndStatus(UUID accountId, TransactionStatus status);
 
-    // 👇 Legacy support (only if you keep requestFingerprint on the entity)
-    Optional<Transaction> findByRequestFingerprint(String requestFingerprint);
+    // Always scoped to the account. There is deliberately no lookup by
+    // fingerprint alone: keys are unique per account, not across the table,
+    // so an unscoped lookup can return another account's posting.
     Optional<Transaction> findByAccountIdAndRequestFingerprint(UUID accountId, String requestFingerprint);
 
 }

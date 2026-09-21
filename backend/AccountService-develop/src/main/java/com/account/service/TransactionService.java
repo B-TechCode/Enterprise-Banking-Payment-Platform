@@ -84,9 +84,15 @@ public class TransactionService {
 	    }
 
 	    public Transaction save(Transaction tx) {
-	    	// If caller populated requestFingerprint, dedupe on it	
+	    	// Deduped within the account, as the unique constraint and
+	    	// AccountService.alreadyPosted both are. Looking the fingerprint up
+	    	// across every account returned another account's row whenever two
+	    	// accounts used the same key: this account's balance had already
+	    	// moved, its own row was never written, and a retry moved the balance
+	    	// again. TransactionFingerprintScopeTest covers it.
 	    	if (tx.getRequestFingerprint() != null && !tx.getRequestFingerprint().isBlank()) {
-	    	Optional<Transaction> dup = transactionRepository.findByRequestFingerprint(tx.getRequestFingerprint());
+	    	Optional<Transaction> dup = transactionRepository.findByAccountIdAndRequestFingerprint(
+	    			tx.getAccountId(), tx.getRequestFingerprint());
 	    	if (dup.isPresent()) {
 	    	log.info("Idempotent replay for transaction fp={}", tx.getRequestFingerprint());
 	    	return dup.get();
