@@ -20,6 +20,7 @@ An item whose answer was a judgement rather than a patch is recorded under
 | 5 | Downstream status decoder is duplicated in two services | Housekeeping | Low | A third service needing it |
 | 8 | AccountService still builds its schema with `ddl-auto: update` alongside Flyway | Reliability | Medium | A full baseline migration |
 | 9 | A payment's currency is never checked against the debtor account's | Correctness | Medium | Cross-service design decision |
+| 10 | MapStruct unmapped-target warnings, newly visible on every run | Housekeeping | Low | A judgement per mapper |
 
 ---
 
@@ -118,6 +119,41 @@ Two ways to close it, and the choice is the reason this is not a quick fix:
 
 Worth settling alongside item 8: option 1 implies a ledger column, and so a
 migration.
+
+## 10. MapStruct unmapped-target warnings
+
+**Housekeeping · Low · not blocked**
+
+Every run now annotates eight warnings, four per job, from three mappers:
+
+- `AccountMapper.toEntity` leaves `id, accountNumber, balance, version,
+  requestFingerprint, createdAt, updatedAt` unmapped.
+- `TransactionMapper.toEntity` leaves `id, transactionId, status,
+  requestFingerprint, createdAt, updatedAt, version` unmapped.
+- `CustomerMapper` reports twice: `toEntity`, and `updateCustomerFromRequest`,
+  which leaves `firstName, lastName, address, externalId, kycStatus, active`
+  and the audit columns unmapped.
+
+These are not new and nothing regressed. setup-java v6 added a Maven compiler
+problem matcher, so javac diagnostics that always sat in the build log are now
+surfaced as annotations. The warnings were true before anyone could see them.
+
+Mostly they are correct by design: a mapper that builds an entity from a request
+should not invent an id, a balance, an account number or a fingerprint - service
+code and JPA set those. For those, `@Mapper(unmappedTargetPolicy =
+ReportingPolicy.IGNORE)` states the intent instead of leaving a warning to be
+scrolled past. No mapper sets any policy today.
+
+One case deserves reading before it is silenced. `updateCustomerFromRequest`
+takes an `UpdateCustomerRequest` of `fullName, email, phone` against a `Customer`
+that also has `firstName` and `lastName`. That is probably a partial update
+working as intended, but an unmapped target on an *update* is exactly the shape
+of a field that silently never changes, and blanket-ignoring the policy would
+bury it.
+
+The reason to do something rather than nothing: eight warnings on every run are
+eight warnings everyone learns to ignore, and the next real one arrives into
+that habit.
 
 ---
 
