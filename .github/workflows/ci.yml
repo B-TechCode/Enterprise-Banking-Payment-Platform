@@ -15,29 +15,45 @@ on:
     # no run at all and the job below is simply never reconsidered.
     types: [opened, synchronize, reopened, labeled]
 
-# A newer push to the same branch or PR cancels the run it supersedes.
+# A newer push to main cancels the run it supersedes. Pull request runs are
+# deliberately left to finish.
+#
+# Cancelling them looks tidy and is not: opening a pull request and labelling it
+# fire two events moments apart, so one of the two runs is cancelled, and which
+# one survives is a race. When the cancelled one is the newer, branch protection
+# tracks a cancelled check and the merge button never appears - which happened
+# twice before this was changed, each time costing a re-run to clear. Letting
+# both finish costs a few runner minutes on the double-trigger and nothing
+# otherwise, since a single push to a branch still only starts one run.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 # Read-only: this workflow publishes nothing and deploys nothing.
 permissions:
   contents: read
 
+# Both jobs pin ubuntu-24.04 rather than ubuntu-latest, which becomes Ubuntu
+# 26.04 from 19 October 2026. Pinning makes that upgrade something we do on a
+# day we choose, with a green run to compare against, instead of something that
+# arrives inside an unrelated pull request as a mystery failure. The cost is
+# that the pin has to be moved deliberately: 24.04 is supported for now, and
+# GitHub announces image retirements well ahead.
+
 jobs:
   build-and-test:
     name: Compile and test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
 
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # cache: maven caches ~/.m2/repository, keyed on the hash of every
       # pom.xml, so dependencies are downloaded once rather than on every run.
       - name: Set up Java 21 with Maven dependency cache
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -88,7 +104,7 @@ jobs:
 
       - name: Upload test reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: surefire-reports
           path: backend/**/target/surefire-reports/
@@ -111,15 +127,15 @@ jobs:
     if: >-
       github.event_name == 'push'
       || contains(github.event.pull_request.labels.*.name, 'run-integration')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
       - name: Check out
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Java 21 with Maven dependency cache
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
@@ -140,7 +156,7 @@ jobs:
 
       - name: Upload failsafe reports and container logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: failsafe-reports
           path: backend/integration-tests/target/failsafe-reports/
