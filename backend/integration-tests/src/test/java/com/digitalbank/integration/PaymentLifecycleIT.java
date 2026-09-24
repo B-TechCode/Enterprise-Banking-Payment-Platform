@@ -48,6 +48,13 @@ class PaymentLifecycleIT {
     private static String customerId;
     private static String customerToken;
 
+    /**
+     * An operator provisioning demo money. Only an administrator may credit an
+     * account or open one with a balance: the platform has no deposit or
+     * transfer domain, so a credit cannot say where the money came from.
+     */
+    private static String adminToken;
+
     private static UUID accountId;
     private static String billerReference;
     private static UUID paymentId;
@@ -66,6 +73,9 @@ class PaymentLifecycleIT {
         customerId = "cust-" + UUID.randomUUID();
         customerToken = stack.identity().userToken(
                 customerId, IdentityProviderStub.allUserScopes().toArray(String[]::new));
+
+        adminToken = stack.identity().userToken(
+                "ops-" + UUID.randomUUID(), "admin:accounts", "fdx:accounts.read");
     }
 
     @AfterAll
@@ -110,9 +120,11 @@ class PaymentLifecycleIT {
                 """.formatted(customerId)).require(201);
         accountId = UUID.fromString(account.get("id").asText());
 
-        // A posting is a created resource, so Account Service answers 201.
-        Rest.post(accounts() + "/accounts/" + accountId + "/credit", customerToken, """
-                {"amount":%s,"reason":"payday"}
+        // Funded by an operator, not by the customer: money entering the
+        // platform is administrative, since nothing here can say where it came
+        // from. A posting is a created resource, so Account Service answers 201.
+        Rest.post(accounts() + "/accounts/" + accountId + "/credit", adminToken, """
+                {"amount":%s,"reason":"demo funding"}
                 """.formatted(OPENING_BALANCE)).require(201);
 
         assertThat(balance()).isEqualByComparingTo(OPENING_BALANCE);
@@ -341,6 +353,39 @@ class PaymentLifecycleIT {
     private String paymentState() {
         return Rest.get(payments() + "/payments/" + paymentId, customerToken)
                 .require(200).get("state").asText();
+    }
+
+    @Test
+    @Order(9)
+    @DisplayName("a customer cannot create money, by credit or by opening balance")
+    void aCustomerCannotCreateMoney() {
+        // This token carries every scope an end user is issued, including
+        // fdx:accounts.write, and owns the account. That used to be enough to
+        // credit it: money from nothing, with the ledger recording only that it
+        // had appeared. Both ways in are administrative now.
+        BigDecimal before = balance();
+
+        var credited = Rest.post(accounts() + "/accounts/" + accountId + "/credit", customerToken, """
+                {"amount":1000000.00,"reason":"a million please"}
+                """);
+
+        assertThat(credited.status())
+                .as("an owner crediting their own account is refused")
+                .isEqualTo(403);
+
+        var opened = Rest.post(accounts() + "/accounts", customerToken, """
+                {"customerId":"%s","accountType":"CHEQUING","accountSubType":"PERSONAL",
+                 "status":"ACTIVE","currency":"CAD","nickname":"Rich",
+                 "displayName":"Rich","openingBalance":1000000.00}
+                """.formatted(customerId));
+
+        assertThat(opened.status())
+                .as("the same fabrication in one call, so the same refusal")
+                .isEqualTo(403);
+
+        assertThat(balance())
+                .as("nothing appeared")
+                .isEqualByComparingTo(before);
     }
 
     private UUID batchId() {
