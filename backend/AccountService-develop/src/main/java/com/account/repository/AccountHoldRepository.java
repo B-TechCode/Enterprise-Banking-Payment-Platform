@@ -15,13 +15,12 @@ import java.util.UUID;
 
 public interface AccountHoldRepository extends JpaRepository<AccountHold, UUID> {
     List<AccountHold> findByAccountIdAndStatus(UUID accountId, HoldStatus status);
-    Optional<AccountHold> findByRequestFingerprint(String fingerprint);
-
     /**
      * A hold on this account recorded under this key.
      *
      * <p>Scoped to the account, so one customer's idempotency key cannot match
-     * another customer's hold and return its id and amount.</p>
+     * another customer's hold and return its id and amount. There is
+     * deliberately no lookup by key alone: keys are unique per account.</p>
      */
     Optional<AccountHold> findByAccountIdAndRequestFingerprint(UUID accountId, String fingerprint);
     

@@ -11,6 +11,15 @@ import com.account.model.Account;
 
 public interface AccountRepository extends JpaRepository<Account, UUID> {
     List<Account> findByCustomerId(String customerId);
-    Optional<Account> findByRequestFingerprint(String fingerprint);
+
+    /**
+     * This customer's account created under this fingerprint.
+     *
+     * <p>Scoped to the customer, as the unique constraint is. There is
+     * deliberately no lookup by fingerprint alone: fingerprints are unique per
+     * customer, so one would return another customer's account.</p>
+     */
+    Optional<Account> findByCustomerIdAndRequestFingerprint(String customerId, String fingerprint);
+
     Optional<Account> findByAccountNumber(String accountNumber);
 }

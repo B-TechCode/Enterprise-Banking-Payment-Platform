@@ -364,7 +364,7 @@ class AccountServiceOwnershipTest {
         callerIsCustomer(OTHER);
         AccountRequest request = new AccountRequest(OWNER, AccountType.CHEQUING,
                 AccountSubType.PERSONAL, AccountStatus.ACTIVE, "USD", null, "Everyday", null);
-        when(accountRepo.findByRequestFingerprint(anyString())).thenReturn(Optional.empty());
+        when(accountRepo.findByCustomerIdAndRequestFingerprint(anyString(), anyString())).thenReturn(Optional.empty());
         when(mapper.toEntity(request)).thenReturn(Account.builder().customerId(OWNER).build());
 
         assertThatThrownBy(() -> service.create(request, "key-1"))

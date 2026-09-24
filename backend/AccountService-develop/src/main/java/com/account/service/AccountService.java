@@ -41,13 +41,27 @@ public class AccountService {
 
 	/* ---------------- Utility ---------------- */
 
+	/**
+	 * Identifies a create request so that a retry of it returns the account it
+	 * made instead of making another.
+	 *
+	 * <p>The caller's Idempotency-Key when it sent one, stored as given. Without
+	 * one, a SHA-256 of the request's fields, customer id included. It replaced
+	 * a 32-bit String.hashCode, small enough to collide by accident at volume.
+	 * Either way the value is unique per customer, not across the table, and is
+	 * only ever looked up together with the customer id.</p>
+	 *
+	 * <p>Existing fingerprints were not rewritten when the hash changed, so a
+	 * keyless create sent before that deploy and retried after it does not match
+	 * and makes a second account. V1__scope_idempotency_fingerprints records why
+	 * that one-deploy window was accepted rather than backfilled.</p>
+	 */
 	private static String fingerprintForCreate(AccountRequest r, String idempotencyKey) {
 		if (idempotencyKey != null && !idempotencyKey.isBlank())
 			return idempotencyKey.trim();
-		// Stable fingerprint for idempotent account create
 		String base = (r.customerId() + "|" + r.accountType() + "|" + r.accountSubType() + "|" + r.currency() + "|"
 				+ r.nickname() + "|" + r.displayName()).toUpperCase();
-		return Integer.toHexString(base.hashCode());
+		return DigestUtils.sha256Hex(base);
 	}
 
 	private BigDecimal activeHoldsTotal(UUID accountId) {
@@ -263,15 +277,20 @@ public class AccountService {
 	public AccountResponse create(AccountRequest request, String idempotencyKey) {
 		String fp = fingerprintForCreate(request, idempotencyKey);
 
-		Optional<Account> existing = accountRepo.findByRequestFingerprint(fp);
+		// Whether the caller may create for this customer is settled before
+		// anything is looked up on that customer's behalf.
+		ensureOwnerOrAdmin(request.customerId());
+
+		// Scoped to the customer, as the unique constraint is: one customer's
+		// fingerprint or Idempotency-Key can no longer match another's account.
+		Optional<Account> existing = accountRepo.findByCustomerIdAndRequestFingerprint(request.customerId(), fp);
 		if (existing.isPresent()) {
 			Account a = existing.get();
-			// A fingerprint match is only a replay if the caller may see the
-			// account it matched. The fingerprint is derived from caller-supplied
-			// fields (or is the caller's own Idempotency-Key), so another customer
-			// can produce a match on purpose or, since it is a 32-bit hash, by
-			// accident. Without this check the replay path handed back that
-			// customer's account, balance included, with no ownership check at all.
+			// The scoped lookup can only return this customer's account, so
+			// this cannot fail today. It stays as a second layer: before the
+			// lookup was scoped, a match here handed another customer's account
+			// and balance back with no check at all, and the replay path should
+			// not depend on the query's scoping alone to prevent that again.
 			ensureOwnerOrAdmin(a);
 			return mapper.toDto(a);
 		}

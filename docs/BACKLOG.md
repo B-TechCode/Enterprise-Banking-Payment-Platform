@@ -5,64 +5,22 @@ was deferred, and what unblocks it. This is a to-do list, not a place to hide
 things: an item leaves this file when it is fixed, not when it stops being
 convenient.
 
-Priorities are relative to each other, not absolute. The items marked security
-are weaknesses behind an existing control, recorded so the control is not
-mistaken for the whole defence — except item 7, which has not been triaged and
-may not have a control in front of it at all.
+Priorities are relative to each other, not absolute.
+
+Item numbers are permanent IDs, referred to from pull requests and commit
+messages. A fixed item is removed, and the rest keep their numbers; new items
+take the next unused one. Gaps in the numbering are fixed items.
 
 | # | Item | Category | Priority | Blocked on |
 |---|------|----------|----------|------------|
-| 1 | `account_hold.request_fingerprint` is globally unique, not per-account | Security | High | Schema migration |
-| 2 | Account create fingerprint is a 32-bit `String.hashCode()` | Security | Medium | Schema migration + decision |
 | 3 | Orchestrator validator is CAD-only; the agent stages any currency | Correctness | Medium | Product decision |
 | 4 | AICommerceAgent is absent from the integration stack | Test coverage | Medium | Dummy `GEMINI_API_KEY` in the stack |
 | 5 | Downstream status decoder is duplicated in two services | Housekeeping | Low | A third service needing it |
 | 6 | CI actions on v4, already force-run on Node 24; runner is `ubuntu-latest` | Housekeeping | Low | Nothing — do it before 19 Oct 2026 |
 | 7 | An account owner may be able to credit their own account | Security (unverified) | Untriaged | Triage: is this by design? |
+| 8 | AccountService still builds its schema with `ddl-auto: update` alongside Flyway | Reliability | Medium | A full baseline migration |
 
 ---
-
-## 1. Per-account uniqueness for hold fingerprints
-
-**Security · High · needs a migration**
-
-`AccountHold.requestFingerprint` carries `@Column(unique = true)`, so an
-Idempotency-Key is unique across the whole table rather than within one account.
-
-The leak this used to cause is fixed:
-[`AccountService.createHold`](../backend/AccountService-develop/src/main/java/com/account/service/AccountService.java)
-now looks up a replay with `findByAccountIdAndRequestFingerprint`, so a caller
-reusing another customer's key is no longer handed that customer's hold id and
-amount. What remains is the constraint itself. A caller whose key collides with
-another account's now fails the write instead of leaking — correct, but it means
-one customer can make another customer's Idempotency-Key unusable by guessing or
-reusing it, and the failure reads as a database error rather than a refusal.
-
-Fix: replace the column-level unique constraint with a composite
-`UNIQUE (account_id, request_fingerprint)`, matching what `Transaction` already
-does (`uk_tx_account_idem`). Deferred because the platform has no migration tool
-wired up yet — the schema is Hibernate-generated — so changing a constraint needs
-that decision made first.
-
-## 2. Account create fingerprint is a weak hash
-
-**Security · Medium · needs a migration and a decision**
-
-`fingerprintForCreate` falls back to `Integer.toHexString(base.hashCode())` when
-no Idempotency-Key is supplied: a 32-bit Java string hash over caller-supplied
-fields, stored in a globally unique column.
-
-The dangerous consequence is already closed — `create()` calls
-`ensureOwnerOrAdmin` on a fingerprint match before returning the account, so a
-collision can no longer hand back another customer's account and balance. What is
-left is availability: a deliberate or accidental collision makes a legitimate
-account creation fail, and 32 bits is small enough for that to happen by accident
-at volume.
-
-Fix: SHA-256 over the same fields plus the customer id, which both widens the hash
-and scopes it. Deferred with item 1 — it rewrites stored fingerprint values, so it
-needs the same migration story, and a decision on whether existing rows are
-backfilled or the column is scoped per-customer instead.
 
 ## 3. CAD-only validation versus multi-currency proposals
 
@@ -150,3 +108,34 @@ Triage should answer, in order:
 2. If not, do end-user tokens carry `fdx:accounts.write`? That decides whether
    it is reachable today or only one configuration change away.
 3. If it is reachable, it outranks everything else in this file.
+
+## 8. Move AccountService to `ddl-auto: validate`
+
+**Reliability · Medium · needs a full baseline migration**
+
+AccountService gained Flyway for the fingerprint constraints (items 1 and 2,
+fixed), but Hibernate still builds its tables with `ddl-auto: update`, and
+Flyway runs first. That split has three costs:
+
+- **Every migration has to be defensive.** On a fresh database Flyway meets no
+  tables at all, so each migration must check whether its tables exist and
+  quietly do nothing if they don't. V1 does; every future migration has to
+  remember to, and one that doesn't will fail on every new environment while
+  passing on every existing one.
+- **The schema has no single source.** Part of it lives in the entities, part in
+  the migrations, and which part applies depends on the age of the database.
+- **Drift goes unnoticed.** `update` adds whatever the entities declare and
+  removes nothing, so a database can gain columns and constraints that no
+  migration records.
+
+Fix: a migration that creates the full current schema exactly as Hibernate does
+wherever it is missing, with every statement guarded, since existing databases
+already have it. Then `ddl-auto: validate`, so Hibernate only checks the schema
+and Flyway alone changes it. The pg_dump capture in `FingerprintMigrationIT`'s resources is
+a starting point, but it records the schema *before* V1 and would need V1
+applied. `FingerprintMigrationIT` is the natural place to prove the baseline
+matches what Hibernate expects.
+
+Scoped to AccountService, the only service with Flyway. The other services
+still run `update` without any migration tool; that's a larger decision, not
+part of this item.

@@ -83,6 +83,23 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!--
+            Schema migrations. Hibernate's ddl-auto: update only ever adds to a
+            schema, so it cannot replace a constraint: an annotation change
+            reaches new databases and silently misses existing ones. Flyway
+            runs before Hibernate, so a migration can remove what update never
+            would. Versions come from the Spring Boot BOM; Flyway 10 keeps each
+            database's support in its own module, hence the second artifact.
+        -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+
         <!-- Commons Codec -->
         <dependency>
             <groupId>commons-codec</groupId>
