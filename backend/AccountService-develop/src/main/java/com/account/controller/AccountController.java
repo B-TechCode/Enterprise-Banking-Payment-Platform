@@ -165,8 +165,18 @@ public class AccountController {
 
     /* ---------------- Postings ---------------- */
 
+    /**
+     * Brings money into an account from outside the platform.
+     *
+     * <p>Administrators only. There is no deposit or transfer domain here, so a
+     * credit cannot name a source and the ledger has no field to record one in:
+     * left open to an account's owner, it let a customer fabricate their own
+     * money. No service calls this; it exists to provision demo accounts. The
+     * same rule guards a non-zero openingBalance on account creation, which
+     * would otherwise be the same thing in one call.</p>
+     */
     @PostMapping("/accounts/{id}/credit")
-    @PreAuthorize("hasAuthority('SCOPE_fdx:accounts.write')")
+    @PreAuthorize("hasAuthority('SCOPE_admin:accounts')")
     public ResponseEntity<AccountResponse> credit(
             @PathVariable("id") UUID id,
             @RequestHeader(name = "If-Match", required = false) String ifMatch,

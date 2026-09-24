@@ -11,12 +11,14 @@ Item numbers are permanent IDs, referred to from pull requests and commit
 messages. A fixed item is removed, and the rest keep their numbers; new items
 take the next unused one. Gaps in the numbering are fixed items.
 
+An item whose answer was a judgement rather than a patch is recorded under
+**Settled** at the end, so the reasoning outlives the item.
+
 | # | Item | Category | Priority | Blocked on |
 |---|------|----------|----------|------------|
 | 4 | AICommerceAgent is absent from the integration stack | Test coverage | Medium | Dummy `GEMINI_API_KEY` in the stack |
 | 5 | Downstream status decoder is duplicated in two services | Housekeeping | Low | A third service needing it |
 | 6 | CI actions on v4, already force-run on Node 24; runner is `ubuntu-latest` | Housekeeping | Low | Nothing — do it before 19 Oct 2026 |
-| 7 | An account owner may be able to credit their own account | Security (unverified) | Untriaged | Triage: is this by design? |
 | 8 | AccountService still builds its schema with `ddl-auto: update` alongside Flyway | Reliability | Medium | A full baseline migration |
 | 9 | A payment's currency is never checked against the debtor account's | Correctness | Medium | Cross-service design decision |
 
@@ -69,29 +71,6 @@ Two small things in [`ci.yml`](../.github/workflows/ci.yml):
 - Both jobs run on `ubuntu-latest`, which migrates to Ubuntu 26.04 on
   **19 October 2026**. Pin `ubuntu-24.04` before then so the migration is a change
   we make deliberately rather than one that arrives as a mystery red build.
-
-## 7. Self-service credit
-
-**Security (unverified) · Untriaged · needs triage before anything else**
-
-`POST /accounts/{id}/credit` requires `SCOPE_fdx:accounts.write`, and
-`AccountService.credit` runs the same `ensureOwnerOrAdmin` check as every other
-account operation, which lets an account's **owner** through. Read together,
-that suggests a customer holding that scope can credit their own account with
-any amount: money created from nothing.
-
-This has not been investigated. It was noticed in passing on 21 Sep 2026 while
-tracing the transaction dedupe fix, and is recorded so it is not lost. It may
-well be intended — a mock bank needs some way to fund accounts — and whether it
-is reachable at all depends on which tokens are issued `fdx:accounts.write`,
-which is Auth0 configuration rather than anything in this repository.
-
-Triage should answer, in order:
-
-1. Is customer self-credit intended? If it is, say so here and close the item.
-2. If not, do end-user tokens carry `fdx:accounts.write`? That decides whether
-   it is reachable today or only one configuration change away.
-3. If it is reachable, it outranks everything else in this file.
 
 ## 8. Move AccountService to `ddl-auto: validate`
 
@@ -158,3 +137,42 @@ Two ways to close it, and the choice is the reason this is not a quick fix:
 
 Worth settling alongside item 8: option 1 implies a ledger column, and so a
 migration.
+
+---
+
+# Settled
+
+## 7. Self-service credit — closed 24 Sep 2026
+
+**Triaged as: working as intended, and a real gap against how this repository
+describes itself. Both. Fixed anyway.**
+
+`POST /accounts/{id}/credit` required `fdx:accounts.write` and admitted the
+account's owner, so a customer could credit their own account any amount. The
+triage asked whether that was a deliberate demo mechanism or an oversight, and
+found:
+
+- **It was the intended funding mechanism.** `PaymentLifecycleIT` funded its
+  account by calling `/credit` with a customer token, and the README's business
+  flow lists "account funded" as a step with the ledger reading
+  `CREDIT -> HOLD_PLACED -> HOLD_RELEASED -> DEBIT`.
+- **Nothing else funds an account.** No deposit, transfer, top-up or external
+  rail exists anywhere in the platform.
+- **Nothing could record a source even if it wanted to.** `PostingRequest` is
+  `{amount, reason}`, and the ledger row has no counterparty or external
+  reference field. The domain has no notion of where money comes from.
+- **No service calls credit.** Not for refunds, reversals, settlement or
+  interest. Its only caller was the test.
+- **Restricting credit alone would have been theatre.** `openingBalance` on
+  account creation let a customer open an account at any balance — the same
+  fabrication in one call.
+
+So it was not a forgotten check. It was a missing domain concept, in a platform
+whose README calls itself production-oriented. Closed by making both routes
+administrative rather than by inventing a deposits domain: an operator may
+provision demo money, a customer may not create it. The README now says funding
+is demo-only.
+
+What a real deployment would need instead — inbound rails, a counterparty, a
+reconcilable external reference — is deliberately not in this repository, and
+this item is not a placeholder for building it.

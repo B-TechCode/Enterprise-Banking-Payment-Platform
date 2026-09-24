@@ -258,6 +258,11 @@ in PostgreSQL and Kafka.
 **Business flow** — customer, biller and account created through the public APIs,
 account funded, payment initiated and driven to `POSTED`:
 
+> Funding here is demo-only: an administrator credits the account, because the
+> platform models no deposit, transfer or external funding domain — a credit
+> cannot name a source, and the ledger has no field to record one in. A real
+> deployment would fund accounts from settled inbound rails, not an API call.
+
 | Stage | Evidence |
 |---|---|
 | Payment accepted | `202`, state `FUNDS_HELD` |

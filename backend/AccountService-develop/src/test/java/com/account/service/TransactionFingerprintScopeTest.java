@@ -114,9 +114,12 @@ class TransactionFingerprintScopeTest {
             return tx;
         });
 
-        // A trusted service caller, as the Payment Orchestrator is, so both
-        // accounts can be posted to; ownership is covered elsewhere.
-        when(currentUser.isClientCredentials()).thenReturn(true);
+        // An administrator, so both accounts can be posted to and credits are
+        // allowed at all: only an administrator may bring money in, per
+        // AccountFundingAuthorizationTest. Who may post is covered there and in
+        // AccountServiceOwnershipTest; what is recorded is the subject here.
+        when(currentUser.hasScope("admin:accounts")).thenReturn(true);
+        when(currentUser.isClientCredentials()).thenReturn(false);
         when(currentUser.customerIdClaim()).thenReturn(Optional.empty());
     }
 

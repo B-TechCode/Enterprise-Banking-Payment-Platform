@@ -196,6 +196,14 @@ class AccountPostingIdempotencyTest {
     @DisplayName("credit")
     class Credit {
 
+        @BeforeEach
+        void callerIsAnAdministrator() {
+            // Only an administrator may credit at all, since a credit brings
+            // money in from nowhere; AccountFundingAuthorizationTest covers who.
+            // What is being tested here is that a repeat adds money once.
+            when(currentUser.hasScope("admin:accounts")).thenReturn(true);
+        }
+
         @Test
         @DisplayName("a repeat under the same key adds no money and records nothing")
         void repeatUnderSameKeyAddsNoMoney() {

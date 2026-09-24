@@ -89,6 +89,27 @@ public class AccountService {
 	 * tokens that legitimately hold that scope, removing the ownership check for
 	 * them and allowing one customer to act on another customer's account.</p>
 	 */
+	/**
+	 * Enforces that the caller may bring money into the platform.
+	 *
+	 * <p>Crediting an account and opening one with a balance are the only two
+	 * ways a balance can appear from nothing: the platform has no deposit,
+	 * transfer or external funding domain, so neither operation can name where
+	 * the money came from, and the ledger has no field to record it in. Ownership
+	 * is therefore the wrong test - it would let a customer fabricate their own
+	 * money - and so is the service bypass, since no service calls either path.
+	 * Only an administrator provisioning a demo account may.</p>
+	 *
+	 * <p>This mirrors the scope on the endpoints. It is repeated here so the rule
+	 * survives a controller being re-annotated or another caller being added;
+	 * AccountFundingAuthorizationTest pins both halves.</p>
+	 */
+	private void ensureMayCreateMoney() {
+		if (!currentUser.hasScope("admin:accounts")) {
+			throw new OwnerAccessDeniedException();
+		}
+	}
+
 	private void ensureOwnerOrAdmin(Account a) {
 
 		// 1) Administrative access.
@@ -298,7 +319,17 @@ public class AccountService {
 		Account entity = mapper.toEntity(request);
 		ensureOwnerOrAdmin(entity);
 		entity.setRequestFingerprint(fp);
-		entity.setBalance(request.openingBalance() == null ? BigDecimal.ZERO : request.openingBalance());
+
+		// An opening balance is money appearing from nothing, exactly as a credit
+		// is. Opening an account at zero stays open to any customer; asking for a
+		// balance with it does not. Without this, restricting credit alone would
+		// achieve nothing: a customer could open an account at any balance.
+		BigDecimal openingBalance =
+				request.openingBalance() == null ? BigDecimal.ZERO : request.openingBalance();
+		if (openingBalance.signum() > 0) {
+			ensureMayCreateMoney();
+		}
+		entity.setBalance(openingBalance);
 
 		// naive account number generator — replace with real BIN/range later
 		entity.setAccountNumber("9" + Math.abs((int) System.nanoTime()));
@@ -313,6 +344,11 @@ public class AccountService {
 
 	@Transactional(propagation = Propagation.REQUIRED)
 	public AccountResponse credit(UUID id, PostingRequest r, Integer expectedVersion, String idempotencyKey) {
+		// Checked before the account is even loaded: a customer may not credit
+		// any account, their own included, so there is nothing to look up on
+		// their behalf.
+		ensureMayCreateMoney();
+
 		Account a = accountRepo.findById(id).orElseThrow(() -> new IllegalArgumentException("Account not found"));
 		ensureOwnerOrAdmin(a);
 
