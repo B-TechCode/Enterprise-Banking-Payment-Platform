@@ -44,9 +44,10 @@ import com.commons.security.CurrentUser;
  * amount reserved. The lookup is now scoped to the account, which is also how
  * the postings idempotency check works.</p>
  *
- * <p>The column's unique constraint is still global, so a key another account
- * already used now fails the write instead of disclosing anything. Making that
- * constraint per-account requires a migration and is tracked separately.</p>
+ * <p>The unique constraint is per account too (uk_hold_account_fingerprint,
+ * created on existing databases by V1__scope_idempotency_fingerprints), so a
+ * key another account already used places this account's hold normally, where
+ * under the old global constraint it failed the write.</p>
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -88,8 +89,9 @@ class AccountHoldIdempotencyScopeTest {
         when(currentUser.isClientCredentials()).thenReturn(false);
         when(currentUser.customerIdClaim()).thenReturn(Optional.of(CUSTOMER));
 
-        // Another customer's hold, recorded under the same key.
-        when(holdRepo.findByRequestFingerprint(KEY)).thenReturn(Optional.of(AccountHold.builder()
+        // Another customer's hold under the same key, found only by a lookup
+        // that names that account, as the database would answer.
+        when(holdRepo.findByAccountIdAndRequestFingerprint(ANOTHER_ACCOUNT, KEY)).thenReturn(Optional.of(AccountHold.builder()
                 .id(UUID.randomUUID())
                 .accountId(ANOTHER_ACCOUNT)
                 .amount(new BigDecimal("9999.00"))
@@ -122,7 +124,9 @@ class AccountHoldIdempotencyScopeTest {
         service.createHold(MY_ACCOUNT, request());
 
         verify(holdRepo).findByAccountIdAndRequestFingerprint(MY_ACCOUNT, KEY);
-        verify(holdRepo, never()).findByRequestFingerprint(anyString());
+        // No unscoped lookup is left on the repository to call: it was removed,
+        // so reintroducing one is a compile error rather than something this
+        // test has to catch.
     }
 
     @Test

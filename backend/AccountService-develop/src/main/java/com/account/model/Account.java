@@ -18,8 +18,15 @@ import lombok.*;
 @Table(name = "account",
        indexes = {
          @Index(name = "idx_account_customer", columnList = "customerId"),
-         @Index(name = "idx_account_status", columnList = "status"),
-         @Index(name = "idx_account_fingerprint", columnList = "requestFingerprint", unique = true)
+         @Index(name = "idx_account_status", columnList = "status")
+       },
+       uniqueConstraints = {
+         // A create fingerprint is unique per customer, not across the table.
+         // Replaces idx_account_fingerprint and the column's own unique
+         // constraint, both global; V1__scope_idempotency_fingerprints drops
+         // them from existing databases.
+         @UniqueConstraint(name = "uk_account_customer_fingerprint",
+                           columnNames = {"customerId", "requestFingerprint"})
        })
 public class Account {
 
@@ -61,8 +68,8 @@ public class Account {
     @Version
     private Integer version;
 
-    /** For idempotent create */
-    @Column(length = 128, unique = true)
+    /** For idempotent create; unique per customer (see the table's constraints). */
+    @Column(length = 128)
     private String requestFingerprint;
 
     private LocalDateTime createdAt;

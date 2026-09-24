@@ -7,3 +7,20 @@ spring:
 
   config:
     import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+
+  # Flyway runs before Hibernate. ddl-auto: update still builds the tables
+  # (it creates what is missing and never removes anything), and Flyway makes
+  # the changes update cannot, such as replacing a constraint.
+  #
+  # baseline-version 0: a database that already has tables but no Flyway
+  # history is baselined at 0, so V1 still runs on it. The default baseline of
+  # 1 would mark V1 as already applied and skip it on exactly the databases
+  # that need it.
+  #
+  # Because Flyway runs first, a migration meets a fresh database before
+  # Hibernate has created any table, so every migration must be written to do
+  # nothing when its tables are absent. Moving to ddl-auto: validate with a
+  # full baseline migration would remove that constraint; see docs/BACKLOG.md.
+  flyway:
+    baseline-on-migrate: true
+    baseline-version: 0

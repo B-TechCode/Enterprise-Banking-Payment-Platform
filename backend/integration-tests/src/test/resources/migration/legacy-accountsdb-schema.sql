@@ -1,0 +1,252 @@
+--
+-- The accountsdb schema as AccountService generated it BEFORE
+-- V1__scope_idempotency_fingerprints, captured with:
+--
+--   pg_dump -U postgres -d accountsdb --schema-only --no-owner --no-privileges
+--
+-- from the service jar built at commit 11e1b00, run against an empty postgres:16
+-- with ddl-auto: update. It is not hand-written, because the point of it is the
+-- detail nobody would reproduce from memory: the global uniqueness on
+-- request_fingerprint carries Hibernate-generated hash names
+-- (uk2n30vcupsut90oib3aksw67em on account_hold), and account's
+-- idx_account_fingerprint is a UNIQUE CONSTRAINT rather than the bare unique
+-- index its @Index(unique = true) declaration suggests.
+--
+-- FingerprintMigrationIT loads this, then starts the current service against it,
+-- which is the only way the migration's real job gets tested: Hibernate's
+-- ddl-auto: update never drops either of those, so without the migration an
+-- existing database keeps its global constraints while a fresh one does not.
+--
+-- Regenerate only when the pre-migration schema itself needs to change.
+--
+--
+-- PostgreSQL database dump
+--
+
+\restrict BcQY7EgvkknL0hV9FuQFqldpYBhihCBF37QI6yqpDbYgqMzyZWU8z8XZFPVlzlY
+
+-- Dumped from database version 16.14 (Debian 16.14-1.pgdg13+1)
+-- Dumped by pg_dump version 16.14 (Debian 16.14-1.pgdg13+1)
+
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
+
+SET default_tablespace = '';
+
+SET default_table_access_method = heap;
+
+--
+-- Name: account; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.account (
+    id uuid NOT NULL,
+    account_number character varying(20) NOT NULL,
+    account_sub_type character varying(255) NOT NULL,
+    account_type character varying(255) NOT NULL,
+    balance numeric(19,2) NOT NULL,
+    created_at timestamp(6) without time zone,
+    currency character varying(3) NOT NULL,
+    customer_id character varying(255) NOT NULL,
+    display_name character varying(64),
+    nickname character varying(64),
+    request_fingerprint character varying(128),
+    status character varying(255) NOT NULL,
+    updated_at timestamp(6) without time zone,
+    version integer,
+    CONSTRAINT account_account_sub_type_check CHECK (((account_sub_type)::text = ANY ((ARRAY['PERSONAL'::character varying, 'BUSINESS'::character varying])::text[]))),
+    CONSTRAINT account_account_type_check CHECK (((account_type)::text = ANY ((ARRAY['CHEQUING'::character varying, 'SAVINGS'::character varying, 'CREDIT'::character varying, 'LOAN'::character varying])::text[]))),
+    CONSTRAINT account_status_check CHECK (((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'FROZEN'::character varying, 'CLOSED'::character varying])::text[])))
+);
+
+
+--
+-- Name: account_hold; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.account_hold (
+    id uuid NOT NULL,
+    account_id uuid NOT NULL,
+    amount numeric(19,2) NOT NULL,
+    created_at timestamp(6) without time zone,
+    reason character varying(255),
+    release_at timestamp(6) without time zone,
+    request_fingerprint character varying(128),
+    status character varying(255) NOT NULL,
+    updated_at timestamp(6) without time zone,
+    CONSTRAINT account_hold_status_check CHECK (((status)::text = ANY ((ARRAY['ACTIVE'::character varying, 'RELEASED'::character varying, 'CANCELED'::character varying, 'EXPIRED'::character varying, 'CAPTURED'::character varying])::text[])))
+);
+
+
+--
+-- Name: account_transaction; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.account_transaction (
+    id bigint NOT NULL,
+    account_id uuid NOT NULL,
+    amount numeric(19,2) NOT NULL,
+    balance_after numeric(19,2),
+    created_at timestamp(6) with time zone,
+    currency character varying(3) NOT NULL,
+    occurred_at timestamp(6) with time zone NOT NULL,
+    reason character varying(256),
+    request_fingerprint character varying(100),
+    status character varying(32) NOT NULL,
+    transaction_id uuid NOT NULL,
+    type character varying(32) NOT NULL,
+    updated_at timestamp(6) with time zone,
+    version integer,
+    CONSTRAINT account_transaction_status_check CHECK (((status)::text = ANY ((ARRAY['PENDING'::character varying, 'POSTED'::character varying, 'REVERSED'::character varying, 'FAILED'::character varying])::text[]))),
+    CONSTRAINT account_transaction_type_check CHECK (((type)::text = ANY ((ARRAY['CREDIT'::character varying, 'DEBIT'::character varying, 'HOLD_PLACED'::character varying, 'HOLD_RELEASED'::character varying])::text[])))
+);
+
+
+--
+-- Name: account_transaction_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.account_transaction ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTITY (
+    SEQUENCE NAME public.account_transaction_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
+-- Name: account_hold account_hold_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_hold
+    ADD CONSTRAINT account_hold_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: account account_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account
+    ADD CONSTRAINT account_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: account_transaction account_transaction_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_transaction
+    ADD CONSTRAINT account_transaction_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: account idx_account_fingerprint; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account
+    ADD CONSTRAINT idx_account_fingerprint UNIQUE (request_fingerprint);
+
+
+--
+-- Name: account_hold uk2n30vcupsut90oib3aksw67em; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_hold
+    ADD CONSTRAINT uk2n30vcupsut90oib3aksw67em UNIQUE (request_fingerprint);
+
+
+--
+-- Name: account uk66gkcp94endmotfwb8r4ocxm9; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account
+    ADD CONSTRAINT uk66gkcp94endmotfwb8r4ocxm9 UNIQUE (account_number);
+
+
+--
+-- Name: account_transaction uk_tx_account_idem; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_transaction
+    ADD CONSTRAINT uk_tx_account_idem UNIQUE (account_id, request_fingerprint);
+
+
+--
+-- Name: account_transaction ukgw0vylny8ta210mk9tcd8qrr6; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_transaction
+    ADD CONSTRAINT ukgw0vylny8ta210mk9tcd8qrr6 UNIQUE (transaction_id);
+
+
+--
+-- Name: idx_account_customer; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_account_customer ON public.account USING btree (customer_id);
+
+
+--
+-- Name: idx_account_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_account_status ON public.account USING btree (status);
+
+
+--
+-- Name: idx_hold_account; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_hold_account ON public.account_hold USING btree (account_id);
+
+
+--
+-- Name: idx_hold_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_hold_status ON public.account_hold USING btree (status);
+
+
+--
+-- Name: idx_tx_account; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tx_account ON public.account_transaction USING btree (account_id);
+
+
+--
+-- Name: idx_tx_occurred; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tx_occurred ON public.account_transaction USING btree (occurred_at);
+
+
+--
+-- Name: idx_tx_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tx_status ON public.account_transaction USING btree (status);
+
+
+--
+-- Name: idx_tx_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_tx_type ON public.account_transaction USING btree (type);
+
+
+--
+-- PostgreSQL database dump complete
+--
+
+\unrestrict BcQY7EgvkknL0hV9FuQFqldpYBhihCBF37QI6yqpDbYgqMzyZWU8z8XZFPVlzlY
+

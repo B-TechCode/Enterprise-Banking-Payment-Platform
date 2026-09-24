@@ -19,6 +19,12 @@ import lombok.*;
        indexes = {
          @Index(name = "idx_hold_account", columnList = "accountId"),
          @Index(name = "idx_hold_status", columnList = "status")
+       },
+       uniqueConstraints = {
+         // An Idempotency-Key is unique within an account, not across the
+         // table. Created on existing databases by V1__scope_idempotency_fingerprints.
+         @UniqueConstraint(name = "uk_hold_account_fingerprint",
+                           columnNames = {"accountId", "requestFingerprint"})
        })
 public class AccountHold {
 
@@ -44,8 +50,8 @@ public class AccountHold {
     /** Optional: auto-expire holds */
     private LocalDateTime releaseAt;
 
-    /** Optional idempotency for holds */
-    @Column(length = 128, unique = true)
+    /** Optional idempotency for holds; unique per account (see the table's constraints). */
+    @Column(length = 128)
     private String requestFingerprint;
 
     @PrePersist
