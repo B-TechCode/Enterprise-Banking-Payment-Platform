@@ -18,7 +18,6 @@ An item whose answer was a judgement rather than a patch is recorded under
 |---|------|----------|----------|------------|
 | 4 | AICommerceAgent is absent from the integration stack | Test coverage | Medium | Dummy `GEMINI_API_KEY` in the stack |
 | 5 | Downstream status decoder is duplicated in two services | Housekeeping | Low | A third service needing it |
-| 6 | CI actions on v4, already force-run on Node 24; runner is `ubuntu-latest` | Housekeeping | Low | Nothing — do it before 19 Oct 2026 |
 | 8 | AccountService still builds its schema with `ddl-auto: update` alongside Flyway | Reliability | Medium | A full baseline migration |
 | 9 | A payment's currency is never checked against the debtor account's | Correctness | Medium | Cross-service design decision |
 
@@ -53,24 +52,6 @@ picked up by every service that scans that package, whether or not it wants the
 behaviour, and two copies is not yet enough duplication to justify designing that
 away. Worth extracting to commons-security — as a class that each service opts
 into, not an auto-registered bean — when a third service needs it.
-
-## 6. CI housekeeping
-
-**Housekeeping · Low · not blocked**
-
-Two small things in [`ci.yml`](../.github/workflows/ci.yml):
-
-- `actions/checkout`, `actions/setup-java` and `actions/upload-artifact` are all on
-  v4, which targets Node 20. This is past the warning stage: as of CI run #25
-  (20 Sep 2026) GitHub annotates every run to say it is *forcing* checkout and
-  setup-java to run on Node 24 instead, and that setup-java v4 will receive no
-  further updates. The jobs still pass, but they now run on a runtime the actions
-  were not released against, with no fixes coming if that breaks. The upgrade to
-  v5 is mechanical; the point is to make it before a runner change makes it
-  urgent.
-- Both jobs run on `ubuntu-latest`, which migrates to Ubuntu 26.04 on
-  **19 October 2026**. Pin `ubuntu-24.04` before then so the migration is a change
-  we make deliberately rather than one that arrives as a mystery red build.
 
 ## 8. Move AccountService to `ddl-auto: validate`
 
