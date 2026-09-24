@@ -113,10 +113,26 @@ public class ProposalService {
                     "That account is not active and cannot be used for a payment.");
         }
 
-        String currency = account.currency();
+        // Normalised before it is checked, so an account recorded as " cad " is
+        // not refused over its spelling. Account creation enforces ^[A-Z]{3}$,
+        // but rows predating that rule, or written by another route, should not
+        // cost a customer their payment.
+        String currency = account.currency() == null ? null : account.currency().trim().toUpperCase();
         if (currency == null || !CURRENCY.matcher(currency).matches()) {
             return refuse(customerId, subject, conversationId, arguments,
                     "That account has no usable currency, so a payment cannot be prepared.");
+        }
+
+        // The orchestrator settles one currency only, so a payment from an
+        // account in any other is refused here rather than staged and refused at
+        // confirmation. Both currencies are named because the customer can act
+        // on this: they need another account, and no retry will help.
+        String settlementCurrency = properties.getSettlementCurrency().trim().toUpperCase();
+        if (!settlementCurrency.equals(currency)) {
+            return refuse(customerId, subject, conversationId, arguments,
+                    "That account is held in " + currency
+                            + ", and bill payments can only be made in " + settlementCurrency
+                            + ". Use a " + settlementCurrency + " account instead.");
         }
 
         Optional<BillerView> owned =

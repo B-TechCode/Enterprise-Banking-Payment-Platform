@@ -47,4 +47,18 @@ public class AgentProperties {
 
     /** How long a staged proposal stays confirmable. Unused until the payment slice. */
     private int proposalTtlSeconds = 300;
+
+    /**
+     * The only currency the platform settles bill payments in.
+     *
+     * <p>It mirrors the rule in the Payment Orchestrator's BillPayValidator,
+     * which refuses anything else with CURRENCY_NOT_ALLOWED. Holding it here as
+     * well lets the agent refuse a payment it knows will be refused, at the
+     * point where it can still explain why, rather than staging a proposal that
+     * fails at confirmation. Nothing below the payment record carries a
+     * currency at all - holds and postings are bare amounts - so this is one
+     * setting on each side of a boundary, not a feature flag: changing it here
+     * alone only moves where the refusal happens.</p>
+     */
+    private String settlementCurrency = "CAD";
 }

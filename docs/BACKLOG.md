@@ -13,30 +13,14 @@ take the next unused one. Gaps in the numbering are fixed items.
 
 | # | Item | Category | Priority | Blocked on |
 |---|------|----------|----------|------------|
-| 3 | Orchestrator validator is CAD-only; the agent stages any currency | Correctness | Medium | Product decision |
 | 4 | AICommerceAgent is absent from the integration stack | Test coverage | Medium | Dummy `GEMINI_API_KEY` in the stack |
 | 5 | Downstream status decoder is duplicated in two services | Housekeeping | Low | A third service needing it |
 | 6 | CI actions on v4, already force-run on Node 24; runner is `ubuntu-latest` | Housekeeping | Low | Nothing — do it before 19 Oct 2026 |
 | 7 | An account owner may be able to credit their own account | Security (unverified) | Untriaged | Triage: is this by design? |
 | 8 | AccountService still builds its schema with `ddl-auto: update` alongside Flyway | Reliability | Medium | A full baseline migration |
+| 9 | A payment's currency is never checked against the debtor account's | Correctness | Medium | Cross-service design decision |
 
 ---
-
-## 3. CAD-only validation versus multi-currency proposals
-
-**Correctness · Medium · needs a product decision**
-
-`BillPayValidator` rejects any currency but CAD with `CURRENCY_NOT_ALLOWED`. The
-AI agent stages a proposal in whatever currency the debtor account holds, and does
-not check it against that rule. A customer with a USD account can therefore be
-shown a proposal that reads as ready to confirm, and have it refused at
-confirmation time.
-
-Since the agent gained downstream-status translation the refusal at least reports
-honestly rather than as a server error, so this is a poor experience rather than a
-wrong outcome. Two defensible fixes, and the choice is a product one: refuse at
-staging so the customer is told immediately, or widen the validator if the
-platform is meant to settle more than CAD.
 
 ## 4. AICommerceAgent is not in the integration stack
 
@@ -139,3 +123,38 @@ matches what Hibernate expects.
 Scoped to AccountService, the only service with Flyway. The other services
 still run `update` without any migration tool; that's a larger decision, not
 part of this item.
+
+## 9. A payment's currency is never checked against the account it draws on
+
+**Correctness · Medium · needs a cross-service design decision**
+
+`BillPayValidator` checks that a payment is in the settlement currency. Nothing
+checks that the payment's currency matches the **debtor account's**. A caller can
+send a CAD bill payment drawn on a USD account today: it passes validation, a
+hold is placed on the USD account for that number, and the debit follows. No
+conversion happens anywhere, because nothing below the payment record carries a
+currency at all — `CreateHoldRequest`, `HoldResponse` and `PostingRequest` are
+bare amounts, and neither SettlementService nor BillPayWorkerService reads a
+currency. The money moves at an implied rate of 1:1.
+
+Reaching it takes a non-CAD account, which nothing seeds but any customer can
+open: `AccountRequest.currency` is validated as `^[A-Z]{3}$` with no allowlist.
+
+The AI agent cannot produce this. It stages in the account's own currency and now
+refuses anything but the settlement currency (item 3, fixed), so it never
+composes the mismatched pair. The direct API accepts it.
+
+Two ways to close it, and the choice is the reason this is not a quick fix:
+
+1. **Carry the currency down to the hold.** Add it to `CreateHoldRequest` so
+   AccountService, which knows what the account holds, refuses a mismatch. This
+   puts the check where the fact lives, and makes every future posting honest
+   about its currency, but it changes a DTO several services share.
+2. **Let the orchestrator compare.** It would have to read the account's
+   currency first; its `AccountClient` exposes only `getOwner` and `placeHold`,
+   so this means a new call or widening `AccountOwnerResponse`. Cheaper, but the
+   check then sits away from the data it depends on, and holds stay
+   currency-blind.
+
+Worth settling alongside item 8: option 1 implies a ledger column, and so a
+migration.

@@ -96,9 +96,10 @@ class ProposalServiceTest {
         when(billerQueryService.isActiveInRegistry(BILLER_REF)).thenReturn(true);
     }
 
+    /** In the settlement currency: staging refuses any other, per ProposalCurrencyTest. */
     private AccountResponse account(AccountStatus status) {
         return new AccountResponse(accountId, CUSTOMER, "12345678", AccountType.CHEQUING,
-                AccountSubType.PERSONAL, status, "USD", "Main", "Everyday Chequing",
+                AccountSubType.PERSONAL, status, "CAD", "Main", "Everyday Chequing",
                 new BigDecimal("500.00"), "****5678", 1);
     }
 
@@ -258,6 +259,9 @@ class ProposalServiceTest {
                     .billerName("City Electric")
                     .invoiceReference("INV-2026-77")
                     .amount(new BigDecimal("75.00"))
+                    // Deliberately a currency staging can no longer produce.
+                    // Confirmation rebuilds the payment from the stored row, so
+                    // this pins that the currency is copied rather than assumed.
                     .currency("USD")
                     .status(ProposalStatus.PENDING_CONFIRMATION)
                     .createdAt(now)
