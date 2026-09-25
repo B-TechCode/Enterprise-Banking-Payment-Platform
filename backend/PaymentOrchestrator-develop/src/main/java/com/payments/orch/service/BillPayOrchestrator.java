@@ -55,6 +55,7 @@ public class BillPayOrchestrator {
 
     var holdReq = new CreateHoldRequest(
             req.amount().value(),     // BigDecimal
+            req.amount().currency(),  // refused by AccountService if the account is held in another
             "BILLPAY",                // reason
             null,                     // releaseAt (optional)
             idemKey                   // idempotency key

@@ -123,6 +123,18 @@ public class GlobalExceptionHandler {
 
     // ---------- Business / State ----------
 
+    /**
+     * A stated currency that does not match the account it draws on. 422
+     * rather than 400 because the request is well formed, and rather than 409
+     * because nothing changed underneath - a retry cannot succeed.
+     */
+    @ExceptionHandler(CurrencyMismatchException.class)
+    public ResponseEntity<ErrorResponse> handleCurrencyMismatch(CurrencyMismatchException ex) {
+        log.debug("CurrencyMismatchException: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(err("CURRENCY_MISMATCH", "Currency mismatch", ex.getMessage()));
+    }
+
     @ExceptionHandler(InsufficientFundsException.class)
     public ResponseEntity<ErrorResponse> handleInsufficientFunds(InsufficientFundsException ex) {
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)

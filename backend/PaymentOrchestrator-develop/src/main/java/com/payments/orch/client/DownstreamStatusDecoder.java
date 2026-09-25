@@ -5,7 +5,7 @@ import org.springframework.context.annotation.Configuration;
 
 import com.commons.exception.ConflictException;
 import com.commons.exception.ForbiddenException;
-import com.commons.exception.InsufficientFundsException;
+import com.commons.exception.CurrencyMismatchException;
 import com.commons.exception.ResourceNotFoundException;
 import com.commons.exception.UpstreamException;
 
@@ -66,7 +66,12 @@ public class DownstreamStatusDecoder {
                     "The account for this payment was not found");
             case 409 -> new ConflictException(
                     "That account changed while this payment was being prepared; try again");
-            case 422 -> new InsufficientFundsException();
+            // AccountService signals insufficient funds as a 400, never a
+            // 422, so this case never carried that meaning. It now carries the
+            // one thing AccountService does answer 422 for: an amount stated in
+            // a currency the account is not held in.
+            case 422 -> new CurrencyMismatchException(
+                    "This payment is in a currency the account is not held in");
             default -> new UpstreamException(
                     "The payment could not be completed right now; please try again");
         };

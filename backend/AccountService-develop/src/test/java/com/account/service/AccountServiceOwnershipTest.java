@@ -338,7 +338,7 @@ class AccountServiceOwnershipTest {
                 Named.of("debit", s -> s.debit(ACCOUNT_ID,
                         new PostingRequest(new BigDecimal("10.00"), "test"), null)),
                 Named.of("createHold", s -> s.createHold(ACCOUNT_ID,
-                        new CreateHoldRequest(new BigDecimal("10.00"), "test", null, null))),
+                        new CreateHoldRequest(new BigDecimal("10.00"), "USD", "test", null, null))),
                 Named.of("releaseHold", s -> s.releaseHold(ACCOUNT_ID, HOLD_ID, "test")));
     }
 
@@ -394,7 +394,7 @@ class AccountServiceOwnershipTest {
         callerIsService();
 
         assertThat(service.createHold(ACCOUNT_ID,
-                new CreateHoldRequest(new BigDecimal("25.00"), "billpay", null, null)).status())
+                new CreateHoldRequest(new BigDecimal("25.00"), "USD", "billpay", null, null)).status())
                 .isEqualTo(HoldStatus.ACTIVE);
         verify(holdRepo).save(any());
     }

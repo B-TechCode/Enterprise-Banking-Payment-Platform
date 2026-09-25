@@ -18,11 +18,12 @@ An item whose answer was a judgement rather than a patch is recorded under
 |---|------|----------|----------|------------|
 | 4 | AICommerceAgent is absent from the integration stack | Test coverage | Medium | Dummy `GEMINI_API_KEY` in the stack |
 | 8 | AccountService still builds its schema with `ddl-auto: update` alongside Flyway | Reliability | Medium | A full baseline migration |
-| 9 | A payment's currency is never checked against the debtor account's | Correctness | Medium | Cross-service design decision |
 | 10 | MapStruct unmapped-target warnings, newly visible on every run | Housekeeping | Low | A judgement per mapper |
 | 12 | AuthUser reports every Auth0 refusal as its own 500 | Correctness | Medium | Nothing |
 | 14 | Auth0 role assignment failures are silently swallowed | Correctness | Medium | Nothing |
 | 15 | A provisioned customer has no way to set a password | Correctness | Medium | Tenant config and a contract decision |
+| 16 | The settlement currency is a literal in `BillPayValidator` | Housekeeping | Low | Nothing |
+| 17 | `Transaction` silently defaults its currency to CAD | Correctness | Low | Item 8 (see entry) |
 
 ---
 
@@ -73,40 +74,13 @@ Scoped to AccountService, the only service with Flyway. The other services
 still run `update` without any migration tool; that's a larger decision, not
 part of this item.
 
-## 9. A payment's currency is never checked against the account it draws on
-
-**Correctness · Medium · needs a cross-service design decision**
-
-`BillPayValidator` checks that a payment is in the settlement currency. Nothing
-checks that the payment's currency matches the **debtor account's**. A caller can
-send a CAD bill payment drawn on a USD account today: it passes validation, a
-hold is placed on the USD account for that number, and the debit follows. No
-conversion happens anywhere, because nothing below the payment record carries a
-currency at all — `CreateHoldRequest`, `HoldResponse` and `PostingRequest` are
-bare amounts, and neither SettlementService nor BillPayWorkerService reads a
-currency. The money moves at an implied rate of 1:1.
-
-Reaching it takes a non-CAD account, which nothing seeds but any customer can
-open: `AccountRequest.currency` is validated as `^[A-Z]{3}$` with no allowlist.
-
-The AI agent cannot produce this. It stages in the account's own currency and now
-refuses anything but the settlement currency (item 3, fixed), so it never
-composes the mismatched pair. The direct API accepts it.
-
-Two ways to close it, and the choice is the reason this is not a quick fix:
-
-1. **Carry the currency down to the hold.** Add it to `CreateHoldRequest` so
-   AccountService, which knows what the account holds, refuses a mismatch. This
-   puts the check where the fact lives, and makes every future posting honest
-   about its currency, but it changes a DTO several services share.
-2. **Let the orchestrator compare.** It would have to read the account's
-   currency first; its `AccountClient` exposes only `getOwner` and `placeHold`,
-   so this means a new call or widening `AccountOwnerResponse`. Cheaper, but the
-   check then sits away from the data it depends on, and holds stay
-   currency-blind.
-
-Worth settling alongside item 8: option 1 implies a ledger column, and so a
-migration.
+The baseline should also add a `currency` column to `account_hold`. Item 9 made
+AccountService refuse a hold stated in a currency the account is not held in,
+which needed no schema change - the account is already loaded and knows what it
+holds. Recording the currency on the hold row is the remaining half, and it
+belongs in the baseline rather than in a standalone migration: adding it as a
+`V2` before a baseline exists means writing exactly the guarded, conditional
+migration this item exists to stop.
 
 ## 10. MapStruct unmapped-target warnings
 
@@ -225,6 +199,58 @@ cannot sign in. Nothing in this repository logs a customer in, so nothing is
 currently broken by that - but it is the reason item 13 is a security fix rather
 than a complete feature.
 
+## 16. The settlement currency is a literal in `BillPayValidator`
+
+**Housekeeping · Low · not blocked**
+
+```java
+if (!"CAD".equals(r.amount().currency())) {
+  throw new IllegalArgumentException("CURRENCY_NOT_ALLOWED");
+}
+```
+
+The currency this platform settles in is a compile-time constant in one
+validator. Supporting a second settlement currency, or running a deployment that
+settles in another, means changing code rather than configuration - and the fact
+is stated in exactly one place with nothing naming it as a platform-wide
+decision.
+
+Not urgent: the platform settles in CAD and nothing contradicts that. It is
+filed because item 9 made the currency story explicit everywhere else - a
+payment now carries its currency to the hold, and the account refuses a
+mismatch - and this is the one remaining place where a currency is simply
+assumed.
+
+Worth pairing with the refusal itself: `IllegalArgumentException` becomes a 400
+carrying the internal string `CURRENCY_NOT_ALLOWED`, where the account-level
+mismatch now raises `CurrencyMismatchException` and answers 422 with a sentence
+a caller can act on.
+
+## 17. `Transaction` silently defaults its currency to CAD
+
+**Correctness · Low · do after item 8**
+
+`Transaction` carries this in its `@PrePersist`:
+
+```java
+if (currency == null) currency = "CAD";
+```
+
+Every caller sets the currency from the account (`emitTransaction` passes
+`acc.getCurrency()`), so the default never fires today. That is the problem with
+it: it is a fallback that would mislabel a ledger row rather than fail, and a
+ledger row that names the wrong currency is worse than one that was never
+written.
+
+On a USD account, a `Transaction` built without a currency would be recorded as
+CAD, and nothing downstream would question it - no service below the payment
+record reads a currency at all.
+
+Remove the default and let a missing currency fail. Sequenced after item 8
+because that is when `account_hold` gains its own currency column, and the two
+are the same question - whether the ledger states its currency or infers it -
+answered in two places.
+
 ---
 
 # Settled
@@ -301,6 +327,47 @@ is demo-only.
 What a real deployment would need instead — inbound rails, a counterparty, a
 reconcilable external reference — is deliberately not in this repository, and
 this item is not a placeholder for building it.
+
+## 9. A payment's currency is never checked against the account it draws on — closed 25 Sep 2026
+
+**Fixed at the account boundary, with no migration. Recording the currency on
+the hold row is folded into item 8.**
+
+`BillPayValidator` checked that a payment was in the settlement currency.
+Nothing checked it against the **debtor account's**. A CAD payment drawn on a
+USD account passed validation, placed a hold on the USD account for that number,
+and was debited. No conversion happened anywhere, because nothing below the
+payment record carried a currency at all - `CreateHoldRequest`, `HoldResponse`
+and `PostingRequest` were bare amounts. The money moved at an implied rate of
+1:1.
+
+The backlog offered two routes and implied both were expensive. They are not.
+The check needs no schema change: `createHold` already loads the account and
+`a.getCurrency()` is in hand, in the same transaction, before anything is
+written. A hold does not need to *store* a currency in order to *refuse* a
+mismatched one.
+
+So `CreateHoldRequest` gained a `currency`, and `createHold` refuses when it
+differs. The guard sits in AccountService rather than the orchestrator for the
+same reason the ownership check does: this service owns the fact, it costs no
+extra query, it is atomic with the write, and every caller of the hold endpoint
+is covered - not only the payment path that prompted it.
+
+Refused with `CurrencyMismatchException`, answering **422**. Not 400, because
+the request is well formed. Not 409, because nothing changed underneath and a
+retry cannot succeed - and 409 already means an optimistic-lock conflict here.
+
+Two things surfaced while closing it:
+
+- The orchestrator's decoder mapped `422` to `InsufficientFundsException`, a
+  status AccountService never emitted: insufficient funds is signalled there as
+  an `IllegalArgumentException`, so it answers 400. That case was dead, and now
+  carries the one meaning AccountService does answer 422 for.
+- The currency guard has to precede the available-funds computation. Below it, a
+  caller paying the wrong currency from an overdrawn account is told they are
+  short of money - true, irrelevant, and it sends them to top up an account that
+  would still refuse. A test pins the ordering; it was written only after moving
+  the guard failed to break anything.
 
 ## 11. CustomerService turns AuthUser refusals into 500s — closed 25 Sep 2026
 

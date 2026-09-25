@@ -104,7 +104,7 @@ class AccountHoldIdempotencyScopeTest {
     }
 
     private CreateHoldRequest request() {
-        return new CreateHoldRequest(new BigDecimal("25.00"), "billpay", (LocalDateTime) null, KEY);
+        return new CreateHoldRequest(new BigDecimal("25.00"), "CAD", "billpay", (LocalDateTime) null, KEY);
     }
 
     @Test

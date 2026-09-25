@@ -16,6 +16,7 @@ import com.account.mapper.AccountMapper;
 import com.account.model.*;
 import com.account.repository.AccountHoldRepository;
 import com.account.repository.AccountRepository;
+import com.commons.exception.CurrencyMismatchException;
 import com.commons.exception.OwnerAccessDeniedException;
 import com.commons.security.CurrentUser;
 import com.account.dto.TransactionRequest;
@@ -410,6 +411,14 @@ public class AccountService {
 		Account a = accountRepo.findById(accountId)
 				.orElseThrow(() -> new IllegalArgumentException("Account not found"));
 		ensureOwnerOrAdmin(a);
+
+		// Before anything is reserved or recorded. The account is already loaded
+		// and knows what it is held in, so the check costs nothing and sits
+		// where the fact lives - every caller of this method gets it, not only
+		// the payment path that happened to prompt it.
+		if (!a.getCurrency().equals(r.currency())) {
+			throw new CurrencyMismatchException(r.currency(), a.getCurrency());
+		}
 
 		String fp = (r.idempotencyKey() != null && !r.idempotencyKey().isBlank()) ? r.idempotencyKey().trim() : null;
 		if (fp != null) {
