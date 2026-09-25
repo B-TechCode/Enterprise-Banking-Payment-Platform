@@ -12,6 +12,8 @@ import org.springframework.web.bind.annotation.RestController;
 import com.authuser.dto.CreateUserRequest;
 import com.authuser.service.Auth0UserService;
 
+import jakarta.validation.Valid;
+
 /**
  * REST controller responsible for provisioning new users in Auth0.
  *
@@ -73,7 +75,7 @@ public class CreateUserController {
      */
     @PreAuthorize("hasAuthority('SCOPE_admin:users.write')")
     @PostMapping("/iam/users")
-    public ResponseEntity<Map> createUser(@RequestBody CreateUserRequest req) {
+    public ResponseEntity<Map> createUser(@Valid @RequestBody CreateUserRequest req) {
         // Delegate to service layer to create the user in Auth0's database connection.
         Map u = auth0.createDbUser(req.getEmail(), req.getCustomerId());
 

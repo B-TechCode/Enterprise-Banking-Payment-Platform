@@ -19,11 +19,11 @@ An item whose answer was a judgement rather than a patch is recorded under
 | 4 | AICommerceAgent is absent from the integration stack | Test coverage | Medium | Dummy `GEMINI_API_KEY` in the stack |
 | 8 | AccountService still builds its schema with `ddl-auto: update` alongside Flyway | Reliability | Medium | A full baseline migration |
 | 10 | MapStruct unmapped-target warnings, newly visible on every run | Housekeeping | Low | A judgement per mapper |
-| 12 | AuthUser reports every Auth0 refusal as its own 500 | Correctness | Medium | Nothing |
 | 14 | Auth0 role assignment failures are silently swallowed | Correctness | Medium | Nothing |
 | 15 | A provisioned customer has no way to set a password | Correctness | Medium | Tenant config and a contract decision |
 | 16 | The settlement currency is a literal in `BillPayValidator` | Housekeeping | Low | Nothing |
 | 17 | `Transaction` silently defaults its currency to CAD | Correctness | Low | Item 8 (see entry) |
+| 18 | The Auth0 role ID is hardcoded in `Auth0UserService` | Housekeeping | Medium | Nothing |
 
 ---
 
@@ -116,32 +116,6 @@ bury it.
 The reason to do something rather than nothing: eight warnings on every run are
 eight warnings everyone learns to ignore, and the next real one arrives into
 that habit.
-
-## 12. AuthUser reports every Auth0 refusal as its own 500
-
-**Correctness · Medium · not blocked**
-
-`Auth0UserService.createDbUser` calls the Auth0 Management API with a bare
-`RestTemplate` and no error handling. A non-2xx answer makes `postForEntity`
-throw `HttpClientErrorException`, and the shared `GlobalExceptionHandler` has no
-handler for any RestTemplate exception, so the catch-all turns it into
-`500 INTERNAL_ERROR` — from AuthUser itself.
-
-So AuthUser never emits the status Auth0 gave it. What a caller can actually
-observe from `POST /api/v1/iam/users` is 200, 401, 403, or 500 for everything
-else: a duplicate user, a rejected password, an unreachable tenant, all the same.
-
-This is why item 11 fixed less than it looks. The decoder in CustomerService
-translates the statuses AuthUser *does* send, but a duplicate registration is
-not among them — it arrives as a 500 and is correctly reported as an upstream
-failure. Closing this item is what makes "that customer is already registered"
-reachable.
-
-Fix: catch `HttpStatusCodeException` in `Auth0UserService` and re-throw as the
-commons exception matching the status Auth0 returned — `409` to
-`ConflictException`, and so on — so the status survives the hop. Decide at the
-same time how much of Auth0's error detail is worth keeping: the body names the
-tenant and connection, and nothing downstream should repeat that to a caller.
 
 ## 14. Auth0 role assignment failures are silently swallowed
 
@@ -252,6 +226,29 @@ are the same question - whether the ledger states its currency or infers it -
 answered in two places.
 
 ---
+
+## 18. The Auth0 role ID is hardcoded in `Auth0UserService`
+
+**Housekeeping · Medium · not blocked**
+
+```java
+assignRole(userId, "rol_c7PHGjx2QtuPyVBE", auth);
+```
+
+Every customer this platform provisions is given a role named by a literal in
+source. Role IDs are generated per tenant, so this string is correct in exactly
+one Auth0 tenant and silently wrong in any other. A staging or DR tenant would
+not fail loudly - `assignRole` ignores its own result, which is item 14 - so the
+first sign would be customers who authenticate successfully and then find they
+can do nothing.
+
+It also puts a piece of identity configuration somewhere it cannot be changed
+without a release, and it is not obvious from the name what the role grants.
+
+Move it to configuration alongside `auth0.domain` and the M2M credentials, which
+already live in `config-repo`. Worth doing with item 14 rather than before it:
+that item makes a failed assignment visible, and this one makes the value it
+depends on correct per environment. Either alone is half the fix.
 
 # Settled
 
@@ -407,6 +404,59 @@ A second test pins the ordering in `updateKycStatus`: the registration call come
 before the state change, so a refusal leaves the customer `PENDING` and unsaved.
 That ordering is the only thing stopping a refused registration from being
 recorded as a verification, and nothing else would notice if it were reversed.
+
+## 12. AuthUser reports every Auth0 refusal as its own 500 — closed 25 Sep 2026
+
+**Fixed by translating at the two call sites that know what the call meant, not
+by a shared handler. Auth0's 401 and 403 are deliberately not passed through.**
+
+`Auth0UserService.createDbUser` called the Management API with a bare
+`RestTemplate`. A non-2xx answer throws, and `GlobalExceptionHandler` has no
+handler for any RestTemplate exception, so every refusal reached the catch-all
+and came back as `500 INTERNAL_ERROR` from AuthUser itself. A duplicate user, a
+rejected management token and an unreachable tenant were indistinguishable.
+
+Three approaches were considered. A `ResponseErrorHandler` is the structural
+analogue of the Feign `ErrorDecoder` used elsewhere, but it is per-`RestTemplate`,
+and one template here serves both user creation and role assignment while a
+second serves the token fetch - it would have had to branch on URL to know what
+had failed. Adding `@ExceptionHandler(HttpStatusCodeException.class)` to the
+shared handler was rejected outright: that class is scanned by every service, and
+it would blanket-translate any RestTemplate call anywhere, including ones whose
+downstream status means something entirely different. What shipped is a private
+`translate` called from a `try`/`catch` at the specific call site.
+
+**The mapping is not the one the Feign decoders use, and that is the point.**
+Only 409 describes the caller. Auth0 answers 401 when *our* management token is
+rejected and 403 when *our* M2M application lacks `create:users`. Passing either
+through would blame a caller for a tenant misconfiguration they cannot see, let
+alone fix, so both become 502s. AuthUser still answers a real 403 of its own when
+a caller lacks `admin:users.write`, but that comes from `@PreAuthorize` above
+this layer and never reaches the translation.
+
+This is what makes item 11 mean something. CustomerService already mapped a 409
+from AuthUser to "that customer is already registered in the identity provider",
+but AuthUser never sent a 409, so the branch was unreachable. The full chain is
+now Auth0 409 to `ConflictException` to AuthUser 409 to the CustomerService
+decoder to a 409 an operator can read. A MockMvc test asserts the AuthUser half
+of that hop against the response itself, because the original bug lived precisely
+in the gap between raising the exception and returning a status.
+
+Two things came with it, both approved rather than assumed:
+
+- `CreateUserRequest` now validates its email. Auth0 answers 400 both for a
+  malformed address and for a generated password its policy rejects, and those
+  have opposite owners. Refusing the caller's mistake locally leaves any
+  surviving 400 unambiguously ours - it is logged at error and reported as a
+  502, never as the caller's bad request.
+- `ManagementTokenService.getBearer` had the same bug and is fixed the same way.
+  Every failure there is ours by definition, so all of them are 502s. Its log
+  line carries the status only: Auth0's token error body echoes the `client_id`
+  back.
+
+The unreachable status check that followed the POST was deleted. `RestTemplate`
+throws before it could ever run, so it had been the appearance of error handling
+with none of the substance - which is roughly how the whole item happened.
 
 ## 13. Every customer is provisioned with the same hardcoded password — closed 25 Sep 2026
 
