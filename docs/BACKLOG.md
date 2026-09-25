@@ -19,11 +19,10 @@ An item whose answer was a judgement rather than a patch is recorded under
 | 4 | AICommerceAgent is absent from the integration stack | Test coverage | Medium | Dummy `GEMINI_API_KEY` in the stack |
 | 8 | AccountService still builds its schema with `ddl-auto: update` alongside Flyway | Reliability | Medium | A full baseline migration |
 | 10 | MapStruct unmapped-target warnings, newly visible on every run | Housekeeping | Low | A judgement per mapper |
-| 14 | Auth0 role assignment failures are silently swallowed | Correctness | Medium | Nothing |
 | 15 | A provisioned customer has no way to set a password | Correctness | Medium | Tenant config and a contract decision |
 | 16 | The settlement currency is a literal in `BillPayValidator` | Housekeeping | Low | Nothing |
 | 17 | `Transaction` silently defaults its currency to CAD | Correctness | Low | Item 8 (see entry) |
-| 18 | The Auth0 role ID is hardcoded in `Auth0UserService` | Housekeeping | Medium | Nothing |
+| 19 | `application-prod.yml` binds Auth0 keys the code never reads | Reliability | Medium | Nothing |
 
 ---
 
@@ -117,31 +116,6 @@ The reason to do something rather than nothing: eight warnings on every run are
 eight warnings everyone learns to ignore, and the next real one arrives into
 that habit.
 
-## 14. Auth0 role assignment failures are silently swallowed
-
-**Correctness · Medium · not blocked**
-
-After creating a user, `Auth0UserService.createDbUser` calls `assignRole`, which
-posts to Auth0 and discards the result:
-
-```java
-rt.postForEntity(url, new HttpEntity<>(body, h), Void.class);
-```
-
-The response is never inspected. A 4xx from Auth0 would raise and propagate —
-becoming a 500, per item 12 — but the wider problem is that the outcome is not
-part of the method's contract at all: `createDbUser` returns the created user
-and reports success whether or not the role was attached.
-
-A customer can therefore be created, marked `VERIFIED` and `active` here, and
-left with no role in the identity provider. They can sign in and will be refused
-everything, and nothing in this platform records why. The role id is also a bare
-literal, `rol_c7PHGjx2QtuPyVBE`, with no indication of which role it is or which
-tenant it belongs to.
-
-Worth settling alongside item 12, since both are about the same method being
-honest about what happened.
-
 ## 15. A provisioned customer has no way to set a password
 
 **Correctness · Medium · needs tenant config and a contract decision**
@@ -227,28 +201,32 @@ answered in two places.
 
 ---
 
-## 18. The Auth0 role ID is hardcoded in `Auth0UserService`
+## 19. `application-prod.yml` binds Auth0 keys the code never reads
 
-**Housekeeping · Medium · not blocked**
+**Reliability · Medium · not blocked**
 
-```java
-assignRole(userId, "rol_c7PHGjx2QtuPyVBE", auth);
+The prod profile sets:
+
+```yaml
+auth0:
+  mgmt-client-id: ${AUTH0_MGMT_CLIENT_ID}
+  mgmt-client-secret: ${AUTH0_MGMT_CLIENT_SECRET}
 ```
 
-Every customer this platform provisions is given a role named by a literal in
-source. Role IDs are generated per tenant, so this string is correct in exactly
-one Auth0 tenant and silently wrong in any other. A staging or DR tenant would
-not fail loudly - `assignRole` ignores its own result, which is item 14 - so the
-first sign would be customers who authenticate successfully and then find they
-can do nothing.
+The code reads `${auth0.mgmt.client-id}` — a dot, not a hyphen. These two keys
+bind to nothing, and the same file declares a datasource for a service that has
+no datasource at all, plus `loginClientId` and friends that nothing reads.
 
-It also puts a piece of identity configuration somewhere it cannot be changed
-without a release, and it is not obvious from the name what the role grants.
+Not currently breaking: Config Server supplies the correctly shaped keys, so the
+service works in spite of this file rather than because of it. That is the
+problem. Anyone reading it to find out how AuthUser is configured in production
+learns something untrue, and an operator setting `AUTH0_MGMT_CLIENT_ID` for the
+prod profile alone would find it silently ignored.
 
-Move it to configuration alongside `auth0.domain` and the M2M credentials, which
-already live in `config-repo`. Worth doing with item 14 rather than before it:
-that item makes a failed assignment visible, and this one makes the value it
-depends on correct per environment. Either alone is half the fix.
+Found while moving the role id to configuration (item 18), in the file next to
+the one being edited. Left alone deliberately: it is a separate question from
+the role id, and the prod profile deserves reading as a whole rather than one
+key at a time.
 
 # Settled
 
@@ -493,3 +471,59 @@ Closed by removing the concept rather than changing the value:
 
 The generated password is deliberately unusable - nobody knows it. That is the
 point, and it is also why item 15 exists.
+
+## 14. A customer could be created without the role that makes the account usable — closed 25 Sep 2026
+
+**Provisioning is now all-or-nothing: a role that cannot be granted undoes the
+user that was just created.**
+
+The title this item carried was wrong, and worth correcting for anyone reading
+back. "Silently swallowed" describes the discarded return value, but
+`RestTemplate` throws on any non-2xx and `assignRole` caught nothing, so a
+failure did propagate. It was not silent. It was untranslated - it escaped the
+`translate` added by item 12, which wraps only the user-creation call, and
+reached the catch-all as a 500.
+
+The real fault was that `createDbUser` is two calls and could finish half way.
+A customer created without a role authenticates successfully and is then refused
+everything, which reads as a permissions bug rather than a provisioning one, and
+nothing recorded that it had happened.
+
+**Item 12 made that failure permanent, which is what forced the decision here.**
+Once a 409 from Auth0 became a truthful "already registered", a caller retrying
+after a half-failure got a correct refusal forever: the user really did exist.
+The only remedy was manual surgery in the tenant. So a failed role assignment
+now deletes the user it just created and reports a 502, and the retry works.
+
+The compensation is deliberately narrow. The user was created moments earlier in
+the same call and nothing can have referred to it yet, so removing it returns the
+tenant to where it started; granting a role is idempotent in Auth0, so a partial
+success costs nothing. If the delete also fails, the user id is logged at error -
+an orphan that is named can be found and removed, and one that is not cannot.
+
+This needs `delete:users` on the Management API application. Without that scope
+the cleanup is refused and the orphan is logged instead, which is the designed
+fallback rather than a new failure.
+
+## 18. The Auth0 role ID is hardcoded in `Auth0UserService` — closed 25 Sep 2026
+
+**Moved to configuration, and an unset value now refuses to provision rather
+than provisioning without a role.**
+
+`rol_c7PHGjx2QtuPyVBE` was a literal in source: correct in one tenant, silently
+wrong in every other, and unchangeable without a release. It is now
+`auth0.role-id`, from `AUTH0_CUSTOMER_ROLE_ID`, wired through the same four
+places as every other Auth0 setting - the config repo, the dev fallback,
+`.env.example` and the compose file.
+
+Empty by default, matching the convention already stated there: the service
+starts without it and the call fails at invocation rather than at startup. But
+an empty role id must not reach Auth0 as `roles: [""]`, which comes back as an
+opaque 400, so the check happens **before** the user is created. A misconfigured
+deployment refuses cleanly instead of orphaning a user on every call - which
+would have reintroduced item 14 by way of a deployment mistake. A test pins that
+ordering.
+
+Closed with item 14 because they are the same call: one makes a failed
+assignment visible, the other makes the value it depends on correct per
+environment. Either alone is half a fix.

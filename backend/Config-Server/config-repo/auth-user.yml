@@ -27,8 +27,14 @@ auth0:
   #   AUTH0_MGMT_CLIENT_ID    Management API M2M application client id
   #   AUTH0_MGMT_CLIENT_SECRET  Management API M2M application client secret
   #   AUTH0_MGMT_AUDIENCE     e.g. https://<tenant>.us.auth0.com/api/v2/
+  #   AUTH0_CUSTOMER_ROLE_ID  Role granted to every provisioned customer,
+  #                           e.g. rol_xxxxxxxxxxxx. Generated per tenant, so it
+  #                           is wrong in any tenant but the one it came from.
+  #                           Unset means no user is provisioned at all, rather
+  #                           than one provisioned without a role.
   domain: ${AUTH0_DOMAIN:}
   audience: ${AUTH0_AUDIENCE:https://mockbank/api}
+  role-id: ${AUTH0_CUSTOMER_ROLE_ID:}
   mgmt:
     client-id: ${AUTH0_MGMT_CLIENT_ID:}
     client-secret: ${AUTH0_MGMT_CLIENT_SECRET:}

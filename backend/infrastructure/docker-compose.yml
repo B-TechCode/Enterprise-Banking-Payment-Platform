@@ -266,6 +266,7 @@ services:
       AUTH0_MGMT_CLIENT_ID: ${AUTH0_MGMT_CLIENT_ID:-}
       AUTH0_MGMT_CLIENT_SECRET: ${AUTH0_MGMT_CLIENT_SECRET:-}
       AUTH0_MGMT_AUDIENCE: ${AUTH0_MGMT_AUDIENCE:-}
+      AUTH0_CUSTOMER_ROLE_ID: ${AUTH0_CUSTOMER_ROLE_ID:-}
       # No consent service exists in this platform; calls to it fail exactly
       # as they do outside Docker.
       CONSENT_SERVICE_URL: ${CONSENT_SERVICE_URL:-http://consent-service:8096/api/v1}
