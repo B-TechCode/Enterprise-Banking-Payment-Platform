@@ -20,7 +20,9 @@ An item whose answer was a judgement rather than a patch is recorded under
 | 8 | AccountService still builds its schema with `ddl-auto: update` alongside Flyway | Reliability | Medium | A full baseline migration |
 | 9 | A payment's currency is never checked against the debtor account's | Correctness | Medium | Cross-service design decision |
 | 10 | MapStruct unmapped-target warnings, newly visible on every run | Housekeeping | Low | A judgement per mapper |
-| 11 | CustomerService turns AuthUser refusals into 500s on the KYC path | Correctness | Medium | Nothing |
+| 12 | AuthUser reports every Auth0 refusal as its own 500 | Correctness | Medium | Nothing |
+| 13 | Every customer is provisioned with the same hardcoded password | Security | High | Nothing |
+| 14 | Auth0 role assignment failures are silently swallowed | Correctness | Medium | Nothing |
 
 ---
 
@@ -141,25 +143,82 @@ The reason to do something rather than nothing: eight warnings on every run are
 eight warnings everyone learns to ignore, and the next real one arrives into
 that habit.
 
-## 11. CustomerService turns AuthUser refusals into 500s
+## 12. AuthUser reports every Auth0 refusal as its own 500
 
 **Correctness · Medium · not blocked**
 
-`CustomerService.updateKycStatus` calls `AuthServiceClient.registerCustomer` when
-a customer is marked `VERIFIED`. That Feign client has no error decoder, and
-`GlobalExceptionHandler` has no `FeignException` handler, so its catch-all turns
-every refusal from AuthUser into `500 INTERNAL_ERROR`.
+`Auth0UserService.createDbUser` calls the Auth0 Management API with a bare
+`RestTemplate` and no error handling. A non-2xx answer makes `postForEntity`
+throw `HttpClientErrorException`, and the shared `GlobalExceptionHandler` has no
+handler for any RestTemplate exception, so the catch-all turns it into
+`500 INTERNAL_ERROR` — from AuthUser itself.
 
-Concretely: an operator verifying a customer Auth0 already knows gets "Something
-went wrong" instead of a conflict, and the customer is left unverified with no
-usable reason. A 403 or a 422 reads the same way — the operator cannot tell a
-refusal from an outage, and neither can the logs.
+So AuthUser never emits the status Auth0 gave it. What a caller can actually
+observe from `POST /api/v1/iam/users` is 200, 401, 403, or 500 for everything
+else: a duplicate user, a rejected password, an unreachable tenant, all the same.
 
-This is the same shape as the decoder PaymentOrchestrator and AICommerceAgent
-each carry, and fixing it means a third copy — with its own messages, since these
-speak about registering a customer rather than paying a bill. That third adoption
-is what item 5 now waits for: write the copy here first, then extract from three
-known consumers rather than designing the abstraction around two.
+This is why item 11 fixed less than it looks. The decoder in CustomerService
+translates the statuses AuthUser *does* send, but a duplicate registration is
+not among them — it arrives as a 500 and is correctly reported as an upstream
+failure. Closing this item is what makes "that customer is already registered"
+reachable.
+
+Fix: catch `HttpStatusCodeException` in `Auth0UserService` and re-throw as the
+commons exception matching the status Auth0 returned — `409` to
+`ConflictException`, and so on — so the status survives the hop. Decide at the
+same time how much of Auth0's error detail is worth keeping: the body names the
+tenant and connection, and nothing downstream should repeat that to a caller.
+
+## 13. Every customer is provisioned with the same hardcoded password
+
+**Security · High · not blocked**
+
+`CustomerService.updateKycStatus` builds the registration request as:
+
+```java
+new CustomerRegistrationRequest(c.getEmail(), "default-password", c.getExternalId())
+```
+
+Every customer the platform has ever verified therefore exists in the identity
+provider with the identical, literal password `default-password`, and nothing
+forces a change on first sign-in. Knowing one customer's email is enough to sign
+in as them.
+
+The value is also a compile-time constant in a public repository, so it is not a
+secret in any sense and rotating it means a release.
+
+What the fix needs is a decision, not just a patch: either generate a
+per-customer secret that is never persisted and drive a password-reset or
+invitation flow through Auth0, or stop creating database users with passwords at
+all and provision them for a passwordless or invitation connection. Both are
+larger than swapping the literal, which is why this is an item rather than a
+one-line change — but the current state should not survive a demo to anyone who
+reads the source.
+
+## 14. Auth0 role assignment failures are silently swallowed
+
+**Correctness · Medium · not blocked**
+
+After creating a user, `Auth0UserService.createDbUser` calls `assignRole`, which
+posts to Auth0 and discards the result:
+
+```java
+rt.postForEntity(url, new HttpEntity<>(body, h), Void.class);
+```
+
+The response is never inspected. A 4xx from Auth0 would raise and propagate —
+becoming a 500, per item 12 — but the wider problem is that the outcome is not
+part of the method's contract at all: `createDbUser` returns the created user
+and reports success whether or not the role was attached.
+
+A customer can therefore be created, marked `VERIFIED` and `active` here, and
+left with no role in the identity provider. They can sign in and will be refused
+everything, and nothing in this platform records why. The role id is also a bare
+literal, `rol_c7PHGjx2QtuPyVBE`, with no indication of which role it is or which
+tenant it belongs to.
+
+Worth settling alongside item 12, since both are about the same method being
+honest about what happened.
 
 ---
 
@@ -237,3 +296,42 @@ is demo-only.
 What a real deployment would need instead — inbound rails, a counterparty, a
 reconcilable external reference — is deliberately not in this repository, and
 this item is not a placeholder for building it.
+
+## 11. CustomerService turns AuthUser refusals into 500s — closed 25 Sep 2026
+
+**Fixed: CustomerService now carries a downstream status decoder. The duplicate
+registration case is not closed by it, and is tracked as item 12.**
+
+`AuthServiceClient` had no error decoder, so Feign's `FeignException` reached the
+shared handler's catch-all and every answer from AuthUser became
+`500 INTERNAL_ERROR`. An operator marking a customer verified was told the server
+had failed, which reads exactly like an outage and leaves nothing to act on.
+
+Closed by a `DownstreamStatusDecoder` in CustomerService, the third copy of the
+pattern PaymentOrchestrator and AICommerceAgent already carry, with messages
+written for an operator performing a registration rather than a customer paying a
+bill:
+
+- `403` to `ForbiddenException`, `404` to `ResourceNotFoundException`, `409` to
+  `ConflictException`.
+- Everything else, including `401` and any 5xx, to `UpstreamException`. A
+  downstream 401 means the token this service relayed was rejected, not the
+  operator's own, so passing it through would ask them to re-authenticate against
+  a problem they cannot fix.
+
+`422` is deliberately absent. The other two copies map it to
+`InsufficientFundsException`, which means nothing on a registration call, and a
+test pins the omission so that copying the payment mapping back in has to be a
+deliberate act. That divergence is the first evidence that what differs between
+the three copies is more than message text — worth remembering against item 5.
+
+**What this does not fix.** A duplicate registration still surfaces as a 500,
+because AuthUser turns Auth0's 409 into its own 500 before CustomerService ever
+sees a status. The decoder maps what AuthUser sends, and 409 is not among it.
+Item 12 covers that, and only then does "that customer is already registered"
+become reachable.
+
+A second test pins the ordering in `updateKycStatus`: the registration call comes
+before the state change, so a refusal leaves the customer `PENDING` and unsaved.
+That ordering is the only thing stopping a refused registration from being
+recorded as a verification, and nothing else would notice if it were reversed.
