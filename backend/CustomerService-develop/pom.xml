@@ -67,6 +67,18 @@
             <artifactId>spring-cloud-starter-config</artifactId>
         </dependency>
 
+        <!--
+            Feign is reached transitively through the commons modules, but this
+            service now imports feign.Response and feign.codec.ErrorDecoder
+            directly, so it declares the starter itself rather than relying on
+            another module continuing to bring it. PaymentOrchestrator and
+            AICommerceAgent, which carry the same decoder, both declare it.
+        -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+        </dependency>
+
         <!-- JPA -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
