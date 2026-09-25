@@ -17,10 +17,10 @@ An item whose answer was a judgement rather than a patch is recorded under
 | # | Item | Category | Priority | Blocked on |
 |---|------|----------|----------|------------|
 | 4 | AICommerceAgent is absent from the integration stack | Test coverage | Medium | Dummy `GEMINI_API_KEY` in the stack |
-| 5 | Downstream status decoder is duplicated in two services | Housekeeping | Low | A third service needing it |
 | 8 | AccountService still builds its schema with `ddl-auto: update` alongside Flyway | Reliability | Medium | A full baseline migration |
 | 9 | A payment's currency is never checked against the debtor account's | Correctness | Medium | Cross-service design decision |
 | 10 | MapStruct unmapped-target warnings, newly visible on every run | Housekeeping | Low | A judgement per mapper |
+| 11 | CustomerService turns AuthUser refusals into 500s on the KYC path | Correctness | Medium | Nothing |
 
 ---
 
@@ -39,20 +39,6 @@ than the behaviour.
 Blocked on a small piece of plumbing: the agent fails fast at startup without
 `GEMINI_API_KEY`, so the stack needs a dummy value injected. No live model call is
 wanted or needed — the confirm endpoint does not involve the model at all.
-
-## 5. Duplicated downstream status decoder
-
-**Housekeeping · Low · deliberate for now**
-
-`DownstreamStatusDecoder` exists twice, once in PaymentOrchestrator and once in
-AICommerceAgent. The status-to-exception mapping is identical; the messages are
-not, because one answers an API and the other answers a conversation.
-
-Left duplicated on purpose. A shared `@Configuration` under `com.commons` would be
-picked up by every service that scans that package, whether or not it wants the
-behaviour, and two copies is not yet enough duplication to justify designing that
-away. Worth extracting to commons-security — as a class that each service opts
-into, not an auto-registered bean — when a third service needs it.
 
 ## 8. Move AccountService to `ddl-auto: validate`
 
@@ -155,9 +141,67 @@ The reason to do something rather than nothing: eight warnings on every run are
 eight warnings everyone learns to ignore, and the next real one arrives into
 that habit.
 
+## 11. CustomerService turns AuthUser refusals into 500s
+
+**Correctness · Medium · not blocked**
+
+`CustomerService.updateKycStatus` calls `AuthServiceClient.registerCustomer` when
+a customer is marked `VERIFIED`. That Feign client has no error decoder, and
+`GlobalExceptionHandler` has no `FeignException` handler, so its catch-all turns
+every refusal from AuthUser into `500 INTERNAL_ERROR`.
+
+Concretely: an operator verifying a customer Auth0 already knows gets "Something
+went wrong" instead of a conflict, and the customer is left unverified with no
+usable reason. A 403 or a 422 reads the same way — the operator cannot tell a
+refusal from an outage, and neither can the logs.
+
+This is the same shape as the decoder PaymentOrchestrator and AICommerceAgent
+each carry, and fixing it means a third copy — with its own messages, since these
+speak about registering a customer rather than paying a bill. That third adoption
+is what item 5 now waits for: write the copy here first, then extract from three
+known consumers rather than designing the abstraction around two.
+
 ---
 
 # Settled
+
+## 5. Duplicated downstream status decoder — closed 25 Sep 2026
+
+**Triaged as: duplication worth keeping, with a sharper trigger for revisiting
+it.**
+
+`DownstreamStatusDecoder` exists twice, once in PaymentOrchestrator and once in
+AICommerceAgent. The status-to-exception mapping is identical; the messages are
+not, because one answers an API and the other answers a conversation.
+
+Re-examined and left duplicated. What the two copies genuinely share is a
+`@Configuration` holding a five-case switch — `403` to `ForbiddenException`,
+`404` to `ResourceNotFoundException`, `409` to `ConflictException`, `422` to
+`InsufficientFundsException`, anything else to `UpstreamException` — plus the
+bean-naming workaround. Roughly fifteen lines.
+
+What they do not share is the part that matters to whoever reads the error. All
+five messages differ, and correctly: "You may not use that account for this
+payment" against "That account is not yours to pay from". An extraction would
+have to be parameterised by a message provider, which is a fair amount of design
+to share a switch statement while the load-bearing text stays duplicated anyway.
+The original hazard also still stands: a shared `@Configuration` under
+`com.commons` is picked up by every service scanning that package, whether it
+wants a Feign error decoder or not.
+
+**The trigger, sharpened.** The old one — "when a third service needs it" — had
+quietly gone ambiguous, because a third service needs it today (item 11).
+Extract **when a third service actually adopts it**. At three real message sets
+you can see what genuinely varies; at two you are guessing at the shape, and the
+guess is what you would be stuck with.
+
+**An early warning to watch.** Drift has already begun, harmlessly:
+PaymentOrchestrator has a `serviceOf(methodKey)` helper, so its log line reads
+`account-service answered 403 for ...`, while the agent logs the raw method key.
+A logging nicety one copy gained and the other did not. If the *mapping* ever
+drifts rather than the logging, that is the signal to stop deferring and
+extract — two copies of a switch are cheap, two copies that disagree about what
+a 409 means are not.
 
 ## 7. Self-service credit — closed 24 Sep 2026
 
