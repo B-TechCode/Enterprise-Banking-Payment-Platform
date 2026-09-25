@@ -21,8 +21,8 @@ An item whose answer was a judgement rather than a patch is recorded under
 | 9 | A payment's currency is never checked against the debtor account's | Correctness | Medium | Cross-service design decision |
 | 10 | MapStruct unmapped-target warnings, newly visible on every run | Housekeeping | Low | A judgement per mapper |
 | 12 | AuthUser reports every Auth0 refusal as its own 500 | Correctness | Medium | Nothing |
-| 13 | Every customer is provisioned with the same hardcoded password | Security | High | Nothing |
 | 14 | Auth0 role assignment failures are silently swallowed | Correctness | Medium | Nothing |
+| 15 | A provisioned customer has no way to set a password | Correctness | Medium | Tenant config and a contract decision |
 
 ---
 
@@ -169,32 +169,6 @@ commons exception matching the status Auth0 returned — `409` to
 same time how much of Auth0's error detail is worth keeping: the body names the
 tenant and connection, and nothing downstream should repeat that to a caller.
 
-## 13. Every customer is provisioned with the same hardcoded password
-
-**Security · High · not blocked**
-
-`CustomerService.updateKycStatus` builds the registration request as:
-
-```java
-new CustomerRegistrationRequest(c.getEmail(), "default-password", c.getExternalId())
-```
-
-Every customer the platform has ever verified therefore exists in the identity
-provider with the identical, literal password `default-password`, and nothing
-forces a change on first sign-in. Knowing one customer's email is enough to sign
-in as them.
-
-The value is also a compile-time constant in a public repository, so it is not a
-secret in any sense and rotating it means a release.
-
-What the fix needs is a decision, not just a patch: either generate a
-per-customer secret that is never persisted and drive a password-reset or
-invitation flow through Auth0, or stop creating database users with passwords at
-all and provision them for a passwordless or invitation connection. Both are
-larger than swapping the literal, which is why this is an item rather than a
-one-line change — but the current state should not survive a demo to anyone who
-reads the source.
-
 ## 14. Auth0 role assignment failures are silently swallowed
 
 **Correctness · Medium · not blocked**
@@ -219,6 +193,37 @@ tenant it belongs to.
 
 Worth settling alongside item 12, since both are about the same method being
 honest about what happened.
+
+## 15. A provisioned customer has no way to set a password
+
+**Correctness · Medium · needs tenant config and a contract decision**
+
+Item 13 stopped every customer sharing one known password by generating one per
+user inside AuthUser and never disclosing it. That closed the exposure, and it
+left a gap it did not create: the customer now has no password anyone knows, and
+nothing issues them one.
+
+The mechanism Auth0 offers is a password-change ticket -
+`POST /api/v2/tickets/password-change` returns a one-time URL where the user
+chooses their own password. A database connection has no "must change at next
+login" flag settable when the user is created, so the ticket is the supported
+route rather than one option among several.
+
+Two things have to be decided before it can be built:
+
+- **Delivery.** This platform cannot send email - there is no JavaMail, SMTP or
+  provider dependency anywhere in it. So the ticket URL has to come back through
+  the API, which changes a contract: `updateKycStatus` returns an `Integer`
+  today, and `AuthServiceClient.registerCustomer` is `void`, so CustomerService
+  discards the AuthUser response body entirely. A ticket URL is credential
+  bearing and must not be logged on the way.
+- **Tenant configuration.** The ticket endpoint, its TTL and the connection's
+  password policy need checking against the actual tenant rather than assumed.
+
+Until this is closed, a verified customer exists in the identity provider and
+cannot sign in. Nothing in this repository logs a customer in, so nothing is
+currently broken by that - but it is the reason item 13 is a security fix rather
+than a complete feature.
 
 ---
 
@@ -335,3 +340,39 @@ A second test pins the ordering in `updateKycStatus`: the registration call come
 before the state change, so a refusal leaves the customer `PENDING` and unsaved.
 That ordering is the only thing stopping a refused registration from being
 recorded as a verification, and nothing else would notice if it were reversed.
+
+## 13. Every customer is provisioned with the same hardcoded password — closed 25 Sep 2026
+
+**Fixed: the password is generated per customer inside AuthUser and never
+disclosed. Giving the customer a way to set their own is item 15.**
+
+`CustomerService.updateKycStatus` built every registration with the literal
+`"default-password"`, so every customer the platform had ever verified existed in
+Auth0 with the same credential - and that credential was a compile-time constant
+in a public repository. Knowing a customer's email was enough to sign in as them,
+and rotating it would have meant a release.
+
+It was not a placeholder. Tracing it end to end: the value reached
+`POST /api/v2/users` on a `Username-Password-Authentication` connection, which
+makes it usable immediately at Auth0's hosted login. Nothing in this repository
+forces a reset - there is no password-change, ticket or reset flow anywhere - and
+this platform has no login endpoint of its own, so that hosted page is the real
+login surface. `username` was also set to the customer id, giving two usable
+identifiers against the one known password.
+
+Closed by removing the concept rather than changing the value:
+
+- `password` is gone from `CustomerRegistrationRequest` and `CreateUserRequest`.
+  A caller can no longer choose the credential a customer is created with, and
+  CustomerService no longer invents one - choosing a credential was never its
+  concern.
+- `InitialPasswordGenerator` produces a 32-character value from a `SecureRandom`,
+  seeded with one character from each class before filling so it cannot fail a
+  connection policy by chance, then shuffled so the class positions are not
+  fixed.
+- The value is sent to Auth0 once and never logged, returned or retained. Tests
+  pin all three: it is absent from the response, absent from every log line, and
+  never repeated across a thousand draws.
+
+The generated password is deliberately unusable - nobody knows it. That is the
+point, and it is also why item 15 exists.

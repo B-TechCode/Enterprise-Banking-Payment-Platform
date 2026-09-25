@@ -60,7 +60,6 @@ public class CreateUserController {
      *
      * {
      *   "email": "customer@example.com",
-     *   "password": "Temp@1234",
      *   "customerId": "ext-12345"
      * }
      * </pre>
@@ -69,14 +68,14 @@ public class CreateUserController {
      * Returns a JSON map containing the created Auth0 user's details, including the
      * generated {@code user_id}.
      *
-     * @param req the user creation request payload containing email, password, and customerId
+     * @param req the user creation request payload containing email and customerId
      * @return a {@link ResponseEntity} containing Auth0's user object
      */
     @PreAuthorize("hasAuthority('SCOPE_admin:users.write')")
     @PostMapping("/iam/users")
     public ResponseEntity<Map> createUser(@RequestBody CreateUserRequest req) {
         // Delegate to service layer to create the user in Auth0's database connection.
-        Map u = auth0.createDbUser(req.getEmail(), req.getPassword(), req.getCustomerId());
+        Map u = auth0.createDbUser(req.getEmail(), req.getCustomerId());
 
         // Return the Auth0 user object as JSON.
         return ResponseEntity.ok(u);

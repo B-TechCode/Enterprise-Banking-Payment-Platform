@@ -112,7 +112,7 @@ public class CustomerService {
 
 		if ("VERIFIED".equalsIgnoreCase(kycStatus)) {
 		    CustomerRegistrationRequest request =
-		        new CustomerRegistrationRequest(c.getEmail(), "default-password", c.getExternalId());
+		        new CustomerRegistrationRequest(c.getEmail(), c.getExternalId());
 		    authServiceClient.registerCustomer(request);
 		    c.setKycStatus(KycStatus.VERIFIED);
 		    c.setActive(true);

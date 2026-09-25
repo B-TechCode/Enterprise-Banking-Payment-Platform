@@ -34,6 +34,7 @@ public class Auth0UserService {
     private String domain;
 
     private final ManagementTokenService tokens;
+    private final InitialPasswordGenerator passwords;
     private final RestTemplate rt = new RestTemplate();
 
     /**
@@ -42,8 +43,9 @@ public class Auth0UserService {
      *
      * @param tokens service that provides the "Bearer" token for Auth0 Management API calls
      */
-    public Auth0UserService(ManagementTokenService tokens) {
+    public Auth0UserService(ManagementTokenService tokens, InitialPasswordGenerator passwords) {
         this.tokens = tokens;
+        this.passwords = passwords;
     }
 
     /**
@@ -56,12 +58,16 @@ public class Auth0UserService {
      * <h3>HTTP Request</h3>
      * POST {domain}/api/v2/users
      *
+     * <p>The initial password is generated here and deliberately not accepted
+     * from the caller. It is sent to Auth0 once and never logged, returned or
+     * retained, so the created user has no usable password until one is set
+     * through a password-change ticket (backlog item 15).</p>
+     *
      * @param email       the user's email
-     * @param password    the initial password
      * @param customerId  external customer ID (used as username and stored in app_metadata)
      * @return a {@link Map} containing Auth0's created user object (user_id, email, etc.)
      */
-    public Map createDbUser(String email, String password, String customerId) {
+    public Map createDbUser(String email, String customerId) {
         // 1️⃣ Retrieve the Management API bearer token
         String auth = tokens.getBearer();
 
@@ -75,7 +81,10 @@ public class Auth0UserService {
         List<String> roles =new ArrayList<String>();
        
         body.put("email", email);
-        body.put("password", password);
+
+        // Generated per user, used once, never held. Nothing in this platform
+        // can tell you what it was.
+        body.put("password", passwords.generate());
         body.put("username", customerId); // we use customerId as username
         body.put("connection", "Username-Password-Authentication");
         
