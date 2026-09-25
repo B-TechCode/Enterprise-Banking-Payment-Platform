@@ -3,7 +3,12 @@ package com.authuser.service;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
+
+import com.commons.exception.UpstreamException;
+
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -23,6 +28,7 @@ import java.util.Map;
  * </ul>
  */
 @Service
+@Slf4j
 public class ManagementTokenService {
 
     /**
@@ -113,16 +119,29 @@ public class ManagementTokenService {
         b.put("client_secret", clientSecret);
         b.put("audience", mgmtAudience);
 
-        // 3️⃣ Call Auth0 /oauth/token to get a new Management API token
-        ResponseEntity<Map> resp = rt.postForEntity(
-                domain + "/oauth/token",
-                new HttpEntity<>(b, h),
-                Map.class
-        );
+        // Call Auth0 /oauth/token to get a new Management API token.
+        //
+        // Every failure here is ours, never the caller's: a rejected client
+        // secret, a wrong audience, an unreachable tenant. Left unhandled it
+        // surfaced as a 500 from this service, which reads as a bad request
+        // rather than as credentials that need attention.
+        ResponseEntity<Map> resp;
+        try {
+            resp = rt.postForEntity(
+                    domain + "/oauth/token",
+                    new HttpEntity<>(b, h),
+                    Map.class
+            );
+        } catch (HttpStatusCodeException e) {
+            // The status only, never the body - it echoes the client_id.
+            log.error("Auth0 refused the management token request with {}",
+                    e.getStatusCode().value());
+            throw new UpstreamException("The identity provider is not reachable right now");
+        }
 
         Map body = resp.getBody();
         if (body == null || body.get("access_token") == null) {
-            throw new RuntimeException("Failed to obtain Auth0 management token");
+            throw new UpstreamException("The identity provider is not reachable right now");
         }
 
         // 4️⃣ Cache token and calculate expiry time
