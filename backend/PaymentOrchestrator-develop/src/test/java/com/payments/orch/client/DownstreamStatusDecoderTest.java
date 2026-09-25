@@ -14,7 +14,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 
 import com.commons.exception.ConflictException;
 import com.commons.exception.ForbiddenException;
-import com.commons.exception.InsufficientFundsException;
+import com.commons.exception.CurrencyMismatchException;
 import com.commons.exception.ResourceNotFoundException;
 import com.commons.exception.UpstreamException;
 
@@ -51,7 +51,8 @@ class DownstreamStatusDecoderTest {
                 Arguments.of("not the caller's account", 403, ForbiddenException.class),
                 Arguments.of("account does not exist", 404, ResourceNotFoundException.class),
                 Arguments.of("account changed underneath", 409, ConflictException.class),
-                Arguments.of("not enough money", 422, InsufficientFundsException.class));
+                Arguments.of("stated in a currency the account is not held in",
+                        422, CurrencyMismatchException.class));
     }
 
     @ParameterizedTest(name = "{1} {0}")
@@ -105,7 +106,7 @@ class DownstreamStatusDecoderTest {
         assertThat(decoder.decode("AccountClient#placeHold", responseWith(409, secrets)).getMessage())
                 .isEqualTo("That account changed while this payment was being prepared; try again");
         assertThat(decoder.decode("AccountClient#placeHold", responseWith(422, secrets)).getMessage())
-                .isEqualTo("Insufficient Funds");
+                .isEqualTo("This payment is in a currency the account is not held in");
         assertThat(decoder.decode("AccountClient#placeHold", responseWith(500, secrets)).getMessage())
                 .isEqualTo("The payment could not be completed right now; please try again");
     }
