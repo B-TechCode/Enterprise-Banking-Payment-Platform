@@ -83,6 +83,14 @@ class Auth0RefusalTranslationTest {
         rt.setAccessible(true);
         rt.set(service, restTemplate);
 
+        // createDbUser now refuses before creating anything when no role is
+        // configured, so these fixtures have to name one. That guard is the
+        // subject of Auth0RoleProvisioningTest; here it only has to be
+        // satisfied.
+        Field roleId = Auth0UserService.class.getDeclaredField("roleId");
+        roleId.setAccessible(true);
+        roleId.set(service, "rol_test");
+
         rootLogger = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
         logAppender = new ListAppender<>();
         logAppender.start();

@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import com.commons.exception.ConflictException;
@@ -40,6 +41,17 @@ public class Auth0UserService {
     @Value("${auth0.domain}")
     private String domain;
 
+    /**
+     * The role every provisioned customer is given.
+     *
+     * <p>Role ids are generated per tenant, so a literal here is correct in one
+     * tenant and quietly wrong in every other - and a wrong one cannot be
+     * corrected without a release. Empty by default, matching the other Auth0
+     * settings: the service starts without it and refuses the call instead.</p>
+     */
+    @Value("${auth0.role-id:}")
+    private String roleId;
+
     private final ManagementTokenService tokens;
     private final InitialPasswordGenerator passwords;
     private final RestTemplate rt = new RestTemplate();
@@ -75,6 +87,16 @@ public class Auth0UserService {
      * @return a {@link Map} containing Auth0's created user object (user_id, email, etc.)
      */
     public Map createDbUser(String email, String customerId) {
+        // Before anything is created. A user provisioned without a role can
+        // sign in and do nothing, and there is no way to tell that apart from a
+        // permissions bug by looking at them. If this deployment cannot say
+        // which role to grant, it has no business creating the user at all.
+        if (roleId == null || roleId.isBlank()) {
+            log.error("auth0.role-id is not set (AUTH0_CUSTOMER_ROLE_ID); refusing to provision a "
+                    + "user this deployment could not authorise");
+            throw new UpstreamException("This platform is not configured to provision users right now");
+        }
+
         // 1️⃣ Retrieve the Management API bearer token
         String auth = tokens.getBearer();
 
@@ -126,7 +148,10 @@ public class Auth0UserService {
         }
 
         // 👇 Straight role assignment — that’s it.
-        assignRole(userId, "rol_c7PHGjx2QtuPyVBE", auth);
+        // Creating the user and granting its role are two calls, so this
+        // method can fail half way. What it must not do is return as though it
+        // succeeded, or leave the half behind it standing.
+        assignRoleOrUndoCreation(userId, auth);
         
         
         // ✅ Return the created user object
@@ -176,6 +201,59 @@ public class Auth0UserService {
             }
             default -> new UpstreamException("The user could not be created right now");
         };
+    }
+
+    /**
+     * Grants the configured role, and removes the user again if that fails.
+     *
+     * <p>A user created without a role is worse than no user at all: they
+     * authenticate successfully and are then refused everything, which reads as
+     * a permissions bug rather than a provisioning one. Worse, the caller
+     * retrying now gets a 409 - correctly, since the user does exist - so the
+     * failure becomes permanent and can only be cleared by hand in the tenant.
+     * That is a consequence of item 12 making 409 meaningful, and it is why
+     * this undoes the creation rather than simply reporting it.</p>
+     *
+     * <p>The compensation is narrow on purpose. This user was created moments
+     * ago in this same call and nothing else can have referred to it yet, so
+     * removing it returns the tenant to where it started. Assigning a role is
+     * idempotent in Auth0, so a partial success costs nothing either.</p>
+     */
+    private void assignRoleOrUndoCreation(String userId, String bearer) {
+        try {
+            assignRole(userId, roleId, bearer);
+        } catch (RestClientException e) {
+            int status = (e instanceof HttpStatusCodeException h) ? h.getStatusCode().value() : 0;
+            log.error("Auth0 refused to grant the role (status {}); removing the user just created", status);
+
+            deleteUser(userId, bearer);
+            throw new UpstreamException("The user could not be created right now");
+        }
+    }
+
+    /**
+     * Removes a user that was created but could not be granted its role.
+     *
+     * <p>If this fails too, the user stays in the tenant with no role. Nothing
+     * more can be done about it from here, so the one useful thing is to say
+     * which user it is: an orphan named in the log can be found and removed,
+     * and an orphan nobody logged cannot.</p>
+     *
+     * <p>Requires {@code delete:users} on the Management API application. Without
+     * that scope this call is refused and the orphan is logged instead.</p>
+     */
+    private void deleteUser(String userId, String bearer) {
+        HttpHeaders h = new HttpHeaders();
+        h.set("Authorization", bearer);
+
+        try {
+            rt.exchange(domain + "/api/v2/users/" + userId,
+                    HttpMethod.DELETE, new HttpEntity<>(h), Void.class);
+            log.warn("Removed the partly provisioned user {}", userId);
+        } catch (RestClientException e) {
+            log.error("Could not remove the partly provisioned user {}; it exists in the tenant "
+                    + "with no role and has to be removed by hand", userId);
+        }
     }
 
     private void assignRole(String userId, String roleId, String bearer) {

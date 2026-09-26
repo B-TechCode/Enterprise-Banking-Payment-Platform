@@ -63,6 +63,14 @@ class Auth0UserServicePasswordTest {
         rt.setAccessible(true);
         rt.set(service, restTemplate);
 
+        // createDbUser now refuses before creating anything when no role is
+        // configured, so these fixtures have to name one. That guard is the
+        // subject of Auth0RoleProvisioningTest; here it only has to be
+        // satisfied.
+        Field roleId = Auth0UserService.class.getDeclaredField("roleId");
+        roleId.setAccessible(true);
+        roleId.set(service, "rol_test");
+
         when(restTemplate.postForEntity(anyString(), any(), eq(Map.class)))
                 .thenReturn(new ResponseEntity<>(
                         Map.of("user_id", "auth0|abc123", "email", "ada@example.com"),
