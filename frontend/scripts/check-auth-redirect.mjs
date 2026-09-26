@@ -19,6 +19,18 @@ const browser = await puppeteer.launch({ executablePath: CHROME, headless: true 
 const page = await browser.newPage();
 await page.setViewport({ width: 1280, height: 900 });
 
+/*
+ * The parameters have to be read from the /authorize request as it goes out.
+ * Once the tenant accepts it, it redirects to its own login page and the query
+ * string is gone — so inspecting where the browser ends up reports nothing and
+ * looks like failure.
+ */
+let authorizeUrl = null;
+page.on('request', (request) => {
+  const url = request.url();
+  if (!authorizeUrl && url.includes('/authorize?')) authorizeUrl = url;
+});
+
 await page.goto(`${ORIGIN}/login`, { waitUntil: 'networkidle0' });
 
 const buttons = await page.$$('button');
@@ -39,9 +51,15 @@ await Promise.all([
   signIn.click(),
 ]);
 
-// Auth0 bounces /authorize to its own login page, so look at the whole chain.
 const landed = new URL(page.url());
-const params = landed.searchParams;
+
+if (!authorizeUrl) {
+  console.error('FAIL: nothing was sent to /authorize — sign in did not start');
+  await browser.close();
+  process.exit(1);
+}
+
+const params = new URL(authorizeUrl).searchParams;
 
 /*
  * Auth0 reports a tenant misconfiguration by redirecting back to the callback

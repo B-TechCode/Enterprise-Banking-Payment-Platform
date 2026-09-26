@@ -30,19 +30,20 @@ models no deposit or funding domain — see `docs/BACKLOG.md`, settled item 7. S
 freshly provisioned customer has a zero balance and any payment they try will be
 refused for insufficient funds.
 
-Before a demo, fund the account with an administrative token:
+Before a demo, open and fund an account with an administrative token:
 
 ```bash
-curl -X POST http://localhost:8080/accounts/accounts/{accountId}/credit \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: demo-seed-1" \
-  -d '{"amount": 5000.00, "reason": "demo funding"}'
+ADMIN_TOKEN=... npm run seed -- <customerId> 5000
 ```
 
-`$ADMIN_TOKEN` must carry the `admin:accounts` scope. This is a setup step on
-purpose and is not worked around in the application: an app that could fund
-itself would be the very thing item 7 closed.
+The customer id is the one on the signed-in token — the overview prints it when
+there are no accounts to list. The token needs the `admin:accounts` scope and
+the `https://mockbank/api` audience, which means a machine-to-machine
+application in Auth0 authorised for that API; the management credentials in
+`backend/infrastructure/.env` are for Auth0's own API and will not work here.
+
+This is a setup step on purpose and is not worked around in the application: an
+app that could fund itself would be the very thing item 7 closed.
 
 ## Auth0 tenant requirements
 

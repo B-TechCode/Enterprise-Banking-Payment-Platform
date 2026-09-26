@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import RequireAuth from './auth/RequireAuth';
 import AppShell, { PageHeading } from './components/layout/AppShell';
 import Callback from './pages/Callback';
+import Dashboard from './pages/Dashboard';
 import Foundation from './pages/Foundation';
 import Landing from './pages/Landing';
 import Login from './pages/Login';
@@ -68,7 +69,7 @@ export default function App() {
           </RequireAuth>
         }
       >
-        <Route index element={<Placeholder title="Overview" step={3} />} />
+        <Route index element={<Dashboard />} />
         <Route path="accounts" element={<Placeholder title="Accounts" step={4} />} />
         <Route path="payments" element={<Placeholder title="Payments" step={6} />} />
         <Route path="assistant" element={<Placeholder title="Assistant" step={7} />} />

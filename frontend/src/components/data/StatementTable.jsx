@@ -14,7 +14,16 @@ import Amount from '../money/Amount';
  * It is the same information in the same order, not a different screen.
  */
 
+/**
+ * Which way the money went — or null when the row does not say.
+ *
+ * The ledger knows, but TransactionResponse does not carry `type` yet (see
+ * docs/BACKLOG.md), and guessing from the description would colour a payment
+ * green because its biller happens to be called "Credit Union". A row that
+ * cannot say stays ink and unsigned: less information, but nothing invented.
+ */
 function movementOf(transaction) {
+  if (!transaction.type) return null;
   return transaction.type === 'CREDIT' || transaction.type === 'HOLD_RELEASED' ? 'credit' : 'debit';
 }
 
@@ -49,7 +58,7 @@ export default function StatementTable({ transactions, currency = 'CAD', showBal
       <ul>
         {transactions.map((transaction) => {
           const direction = movementOf(transaction);
-          const occurred = new Date(transaction.occurredAt);
+          const occurred = transaction.occurredAt ? new Date(transaction.occurredAt) : null;
 
           return (
             <li
@@ -57,13 +66,17 @@ export default function StatementTable({ transactions, currency = 'CAD', showBal
               className="border-b border-rule py-3 last:border-b-0 md:grid md:grid-cols-[5.5rem_1fr_8rem_8rem] md:items-baseline md:gap-4 md:py-2.5"
             >
               {/* Desktop: date column. Mobile: moves under the description. */}
-              <time
-                dateTime={transaction.occurredAt}
-                className="hidden text-[13px] text-stone md:block"
-                title={DATE_FULL.format(occurred)}
-              >
-                {DATE.format(occurred)}
-              </time>
+              {occurred ? (
+                <time
+                  dateTime={transaction.occurredAt}
+                  className="hidden text-[13px] text-stone md:block"
+                  title={DATE_FULL.format(occurred)}
+                >
+                  {DATE.format(occurred)}
+                </time>
+              ) : (
+                <span className="hidden text-[13px] text-stone md:block">—</span>
+              )}
 
               <div className="flex items-baseline justify-between gap-4 md:block">
                 <span className="text-[15px] text-ink">{describe(transaction)}</span>
@@ -73,12 +86,11 @@ export default function StatementTable({ transactions, currency = 'CAD', showBal
               </div>
 
               <div className="mt-1 flex items-baseline justify-between gap-4 md:mt-0 md:block md:text-right">
-                <time
-                  dateTime={transaction.occurredAt}
-                  className="text-[13px] text-stone md:hidden"
-                >
-                  {DATE_FULL.format(occurred)}
-                </time>
+                {occurred && (
+                  <time dateTime={transaction.occurredAt} className="text-[13px] text-stone md:hidden">
+                    {DATE_FULL.format(occurred)}
+                  </time>
+                )}
                 <span className="hidden md:inline">
                   <Amount value={transaction.amount} currency={currency} direction={direction} signed />
                 </span>
