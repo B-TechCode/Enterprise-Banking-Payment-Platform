@@ -44,6 +44,30 @@ curl -X POST http://localhost:8080/accounts/accounts/{accountId}/credit \
 purpose and is not worked around in the application: an app that could fund
 itself would be the very thing item 7 closed.
 
+## Auth0 tenant requirements
+
+The SPA application must have:
+
+- **Allowed Callback URL** `http://localhost:5173/callback`
+- **Allowed Logout URL** and **Allowed Web Origin** `http://localhost:5173`
+- **Authorization for the API** whose identifier is `https://mockbank/api`.
+  Without it Auth0 refuses the request with *"Client … is not authorized to
+  access resource server"* — the redirect is well formed and the callback is
+  registered, but no token is ever issued.
+- A **`customer_id` claim** on the tokens, as `https://mockbank/customer_id` or
+  plain `customer_id`. Every service reads the caller's customer from it; a
+  token without one can sign in and read nothing.
+
+```bash
+npm run check:auth
+```
+
+Drives a real sign-in as far as the credential prompt — no password is typed —
+and checks what actually left the browser: response type, PKCE challenge and
+method, audience, callback, requested scopes, and that no client secret is
+present. If the tenant refuses, it prints Auth0's own words rather than a
+generic failure.
+
 ## Checking the layout
 
 ```bash

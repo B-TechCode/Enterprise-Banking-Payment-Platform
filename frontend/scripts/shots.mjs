@@ -8,13 +8,23 @@
  *
  * Uses the Chrome already installed on the machine, so nothing is downloaded.
  *
- *   node scripts/shots.mjs [url] [outDir]
+ *   node scripts/shots.mjs                      every route below
+ *   node scripts/shots.mjs /login              one route
  */
 import { mkdirSync } from 'node:fs';
 import puppeteer from 'puppeteer-core';
 
-const URL = process.argv[2] ?? 'http://localhost:5173/foundation';
-const OUT = process.argv[3] ?? 'shots';
+const ORIGIN = process.env.ORIGIN ?? 'http://localhost:5173';
+const OUT = 'shots';
+
+/** Named so the files say which screen they are. */
+const ROUTES = process.argv[2]
+  ? [{ path: process.argv[2], name: process.argv[2].replace(/\W+/g, '') || 'root' }]
+  : [
+      { path: '/', name: 'landing' },
+      { path: '/login', name: 'login' },
+      { path: '/foundation', name: 'foundation' },
+    ];
 
 const CHROME =
   process.env.CHROME_PATH ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe';
@@ -35,10 +45,11 @@ const browser = await puppeteer.launch({
 
 let failures = 0;
 
-for (const { name, width, height } of WIDTHS) {
+for (const route of ROUTES) {
+  for (const { name, width, height } of WIDTHS) {
   const page = await browser.newPage();
   await page.setViewport({ width, height, deviceScaleFactor: 2 });
-  await page.goto(URL, { waitUntil: 'networkidle0' });
+  await page.goto(ORIGIN + route.path, { waitUntil: 'networkidle0' });
 
   // Fonts must be in before anything is measured or photographed, or the shot
   // is of a fallback face at the wrong widths.
@@ -73,10 +84,10 @@ for (const { name, width, height } of WIDTHS) {
     };
   });
 
-  await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: true });
+  await page.screenshot({ path: `${OUT}/${route.name}-${name}.png`, fullPage: true });
 
   const verdict = report.overflow > 0 ? `OVERFLOW +${report.overflow}px` : 'fits';
-  console.log(`${name.padEnd(8)} ${report.clientWidth}px  ${verdict}`);
+  console.log(`${`${route.name} ${name}`.padEnd(22)} ${report.clientWidth}px  ${verdict}`);
   if (report.overflow > 0) {
     failures += 1;
     for (const c of report.culprits) {
@@ -84,7 +95,8 @@ for (const { name, width, height } of WIDTHS) {
     }
   }
 
-  await page.close();
+    await page.close();
+  }
 }
 
 await browser.close();

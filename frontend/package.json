@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "shots": "node scripts/shots.mjs"
+    "shots": "node scripts/shots.mjs",
+    "check:auth": "node scripts/check-auth-redirect.mjs"
   },
   "dependencies": {
     "@auth0/auth0-react": "^2.27.0",
