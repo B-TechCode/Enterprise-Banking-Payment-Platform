@@ -23,6 +23,7 @@ An item whose answer was a judgement rather than a patch is recorded under
 | 16 | The settlement currency is a literal in `BillPayValidator` | Housekeeping | Low | Nothing |
 | 17 | `Transaction` silently defaults its currency to CAD | Correctness | Low | Item 8 (see entry) |
 | 19 | `application-prod.yml` binds Auth0 keys the code never reads | Reliability | Medium | Nothing |
+| 20 | Nothing documents which scopes the platform requires | Reliability | Medium | Nothing |
 
 ---
 
@@ -227,6 +228,53 @@ Found while moving the role id to configuration (item 18), in the file next to
 the one being edited. Left alone deliberately: it is a separate question from
 the role id, and the prod profile deserves reading as a whole rather than one
 key at a time.
+
+## 20. Nothing documents which scopes the platform requires
+
+**Reliability · Medium · not blocked**
+
+The scopes each endpoint demands exist only as string literals, in `@PreAuthorize`
+annotations and `currentUser.hasScope(...)` calls, spread across five services.
+The identity tenant that has to grant them is configured separately, by hand,
+from no list. Nothing reconciles the two, and nothing fails until a request is
+refused at runtime.
+
+Not hypothetical: on 26 Sep 2026 seeding a demo account failed because the Auth0
+API defined `admin:accounts.read` and `admin:accounts.write` but not plain
+`admin:accounts`, which is what the credit endpoint and the opening-balance
+guard actually check. The symptom was a 403 that could equally have meant a
+missing scope or a customer id that owned nothing, and finding it meant grepping
+the backend for scope literals and comparing them against the dashboard by eye.
+
+What the code requires today:
+
+| Scope | Checked by |
+|---|---|
+| `fdx:accounts.read` | reading accounts, balances, owner |
+| `fdx:accounts.write` | opening an account, placing a hold |
+| `fdx:transactions.read` | reading the ledger |
+| `fdx:bill.read`, `fdx:bill.write` | reading and initiating payments |
+| `admin:accounts` | crediting, a non-zero opening balance, and as an alternative on release, capture and debit |
+| `admin:accounts.read` | listing every account |
+| `admin:accounts.write` | changing account status |
+| `admin:users.write` | AuthUser provisioning |
+
+A table in a document drifts the first time someone adds an endpoint. Two
+options that do not:
+
+1. **Collect them at startup.** Each service logs the scopes its own controllers
+   name, by reflection over the annotations. The list is then produced by the
+   code that enforces it, and reading a log answers "what does this deployment
+   need granted?".
+2. **Fail the build on an undeclared scope.** A test walks the controllers and
+   asserts every scope literal appears in a checked-in inventory file. Adding an
+   endpoint with a new scope then forces a deliberate edit, and that file is the
+   thing to hand whoever configures the tenant.
+
+Option 2 is cheaper and catches the mistake earlier; option 1 is more useful
+when the tenant and the deployment are managed by different people. What is not
+worth doing is a hand-maintained document, since that is precisely what went
+missing here.
 
 # Settled
 
