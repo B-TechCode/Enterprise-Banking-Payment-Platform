@@ -148,7 +148,7 @@ class Auth0RoleProvisioningTest {
         // user whether or not the role was attached, so a caller marking the
         // customer active had no way to know the provisioning was incomplete.
         assertThat(catchThrowable(() -> service.createDbUser("ada@example.com", "cust-1")))
-                .isNotNull();
+                .isInstanceOf(UpstreamException.class);
     }
 
     // ------------------------------------------------------------ compensation
@@ -249,9 +249,13 @@ class Auth0RoleProvisioningTest {
 
         Throwable thrown = catchThrowable(() -> service.createDbUser("ada@example.com", "cust-1"));
 
+        // The exact message, not the absence of particular words. Spring's
+        // HttpStatusCodeException.getMessage() is only "403 Forbidden" - the
+        // response body lives in getResponseBodyAsString() - so asserting what
+        // this message does not contain could never fail, however much of the
+        // exception were appended to it. Pinning the whole string does.
         assertThat(thrown.getMessage())
-                .doesNotContain("dev-wgk04dj5v68sbhre")
-                .doesNotContain("Username-Password-Authentication");
+                .isEqualTo("The user could not be created right now");
 
         assertThat(logged()).doesNotContain("dev-wgk04dj5v68sbhre");
 
