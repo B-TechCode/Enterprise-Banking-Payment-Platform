@@ -1,0 +1,81 @@
+/*
+ * Fraunces carries the headlines and the balance figure; Inter carries
+ * everything a person reads as data. Fraunces is requested with a low optical
+ * size axis and a modest weight range: at display sizes its default softness
+ * reads as decorative, which is the opposite of what a bank wants.
+ */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  /* The palette. Named for what they are, not where they are used, except
+     brick - named after its only permitted use so nobody reaches for it as a
+     decorative red. */
+  --color-ink: #0e1f33;
+  --color-paper: #fbf9f6;
+  --color-emerald: #1b6b4a;
+  --color-brass: #b8935a;
+  --color-stone: #8a6a57;
+  --color-brick: #c0392b;
+
+  /* Derived tints. Kept few on purpose: a palette grows by mixing, and then
+     nothing matches anything. */
+  --color-ink-700: #1c344f;
+  --color-ink-500: #33506e;
+  --color-paper-shade: #f3eee7;
+  --color-rule: #e3dbd0;
+  --color-rule-strong: #cfc3b4;
+
+  --font-display: 'Fraunces', ui-serif, Georgia, serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  /* One shadow, barely there. Cards floating off the page is the look this
+     design is avoiding; depth comes from rules and ground colour instead. */
+  --shadow-panel: 0 1px 2px rgb(14 31 51 / 0.04);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv05' 1; /* Inter's single-storey l, easier to scan in data */
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Headlines are Fraunces, and never bolder than 600: the weight above that
+     turns the serifs into slabs. */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+
+  /* Visible focus everywhere, in brass so it reads as intentional rather than
+     as the browser's default blue accident. */
+  :focus-visible {
+    outline: 2px solid var(--color-brass);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: color-mix(in srgb, var(--color-brass) 28%, transparent);
+  }
+}
+
+@utility tabular {
+  /* Every monetary amount uses this, so that statement columns line up and a
+     figure does not shift width as its digits change. */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+@utility rule-t {
+  border-top: 1px solid var(--color-rule);
+}
