@@ -24,10 +24,26 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * What the service said, if it said anything.
+ *
+ * The shared handler answers with { error: { code, message, details } }, nested
+ * one level down. Reading body.message instead — as this did at first — finds
+ * nothing and falls back to a generic sentence, which hides the one piece of
+ * information worth having: "Invalid Owner" and "Access Denied" are both 403s
+ * and mean entirely different things.
+ *
+ * `details` is preferred over `message` because `message` is the status word
+ * ("Forbidden") while `details` carries the reason.
+ */
+function serverSaid(body) {
+  const nested = body?.error;
+  return nested?.details ?? nested?.message ?? body?.message ?? body?.detail ?? null;
+}
+
 /** What a person should be told, by status. */
 function messageFor(status, body) {
-  // The services return { message } or { detail } through the shared handler.
-  const fromServer = body?.message ?? body?.detail;
+  const fromServer = serverSaid(body);
 
   switch (status) {
     case 0:
@@ -35,7 +51,12 @@ function messageFor(status, body) {
     case 401:
       return 'Your session has expired. Sign in again.';
     case 403:
-      return fromServer ?? 'You do not have permission to do that.';
+      // Two different failures arrive as 403: the token lacks the scope the
+      // endpoint requires, or it carries a customer id that does not own what
+      // was asked for. The service distinguishes them; so should this.
+      return fromServer
+        ? `Refused: ${fromServer}`
+        : 'You do not have permission to do that, and the service gave no reason.';
     case 404:
       return fromServer ?? 'That could not be found.';
     case 409:

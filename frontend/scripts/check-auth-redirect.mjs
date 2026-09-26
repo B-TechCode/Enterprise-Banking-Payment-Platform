@@ -107,7 +107,8 @@ for (const [label, ok, detail] of checks) {
   console.log(`${ok ? 'ok  ' : 'FAIL'}  ${label.padEnd(32)} ${detail ?? ''}`);
 }
 
-console.log(`\nstopped at: ${landed.origin}${landed.pathname}`);
+console.log(`\nfull scope requested: ${params.get('scope')}`);
+console.log(`stopped at: ${landed.origin}${landed.pathname}`);
 if (refused) console.log(`tenant said: ${body.split('\n').slice(0, 3).join(' | ')}`);
 
 await browser.close();
